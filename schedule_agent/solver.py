@@ -72,9 +72,9 @@ def _window(req: Requirement, field_open_from: time | None, field_open_until: ti
 
 
 def _fits(
-    problem: Problem,
     req: Requirement,
     min_gap_days: int,
+    blackout: set[date],
     field_id: str,
     start_dt: datetime,
     end_dt: datetime,
@@ -83,7 +83,7 @@ def _fits(
     field_busy: list[tuple[datetime, datetime]],
 ) -> bool:
     day = start_dt.date()
-    if day in set(problem.blackout_dates):
+    if day in blackout:
         return False
     if req.allowed_days and start_dt.weekday() not in req.allowed_days:
         return False
@@ -112,18 +112,29 @@ def _fits(
     return True
 
 
+def _event_title(req: Requirement, team_name: dict[str, str]) -> str:
+    """Per-requirement title when set, else the default team + event type."""
+    if req.title:
+        return req.title
+    return f"{team_name.get(req.team_id, req.team_id)} {req.event_type}"
+
+
 def solve(problem: Problem, rules: Rules) -> Proposal:
     """Place every requirement week by week. Never raises for tight space.
 
     Returns a Proposal with events sorted by start time and one Shortfall per
     requirement per week where fewer sessions were placed than asked for.
+    Fairness: each week requirements go in order of most sessions short so
+    far, then team id, so a short season rotates the pain instead of always
+    starving the same teams. Blackout dates from the request
+    (``Rules.blackout_dates``) are merged with ``Problem.blackout_dates``.
     """
     tz = ZoneInfo(problem.timezone)
     team_ids = {t.id for t in problem.teams}
     team_name = {t.id: t.name for t in problem.teams}
     field_ids = sorted(f.id for f in problem.fields)
     field_by_id = {f.id: f for f in problem.fields}
-    blackout = set(problem.blackout_dates)
+    blackout = set(problem.blackout_dates) | set(rules.blackout_dates)
 
     team_busy: dict[str, list[tuple[datetime, datetime]]] = {t.id: [] for t in problem.teams}
     field_busy: dict[str, list[tuple[datetime, datetime]]] = {f.id: [] for f in problem.fields}
@@ -135,17 +146,22 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
             field_busy[rid].append((b.start, b.end))
         # Unknown resources are ignored: the host owns ids we never saw.
 
-    order = sorted(range(len(rules.requirements)), key=lambda i: (rules.requirements[i].team_id, rules.requirements[i].event_type))
     placed: list[ProposedEvent] = []
     shortfalls: list[Shortfall] = []
     preferred: dict[int, list[tuple[int, time, str]]] = {}
+    short_so_far: dict[int, int] = {i: 0 for i in range(len(rules.requirements))}
 
     for week_dates in _weeks(problem.season_start, problem.season_end):
         week_start = week_dates[0]
         by_weekday = {}
         for d in week_dates:
             by_weekday.setdefault(d.weekday(), d)
-        for idx in order:
+        # Fairness: hungriest requirement first, then team id (deterministic).
+        week_order = sorted(
+            range(len(rules.requirements)),
+            key=lambda i: (-short_so_far[i], rules.requirements[i].team_id, rules.requirements[i].event_type, i),
+        )
+        for idx in week_order:
             req = rules.requirements[idx]
             if req.sessions_per_week == 0:
                 continue
@@ -160,6 +176,7 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                         reason=f"Unknown team '{req.team_id}': nothing placed for week starting {week_start.isoformat()}.",
                     )
                 )
+                short_so_far[idx] += req.sessions_per_week
                 continue
             valid_fields = [f for f in (req.allowed_fields or field_ids) if f in field_by_id]
             valid_fields.sort()
@@ -174,6 +191,7 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                         reason=f"No known fields for {team_name.get(req.team_id, req.team_id)} in week starting {week_start.isoformat()}.",
                     )
                 )
+                short_so_far[idx] += req.sessions_per_week
                 continue
             valid_days = sorted(set(req.allowed_days)) if req.allowed_days else list(range(7))
             duration = timedelta(minutes=req.duration_minutes)
@@ -188,13 +206,13 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                     continue
                 start_dt = datetime.combine(d, slot_t, tzinfo=tz)
                 end_dt = start_dt + duration
-                if _fits(problem, req, rules.min_gap_days, fid, start_dt, end_dt, placed, team_busy.get(req.team_id, []), field_busy.get(fid, [])):
+                if _fits(req, rules.min_gap_days, blackout, fid, start_dt, end_dt, placed, team_busy.get(req.team_id, []), field_busy.get(fid, [])):
                     placed.append(
                         ProposedEvent(
                             team_id=req.team_id,
                             field_id=fid,
                             event_type=req.event_type,
-                            title=f"{team_name.get(req.team_id, req.team_id)} {req.event_type}",
+                            title=_event_title(req, team_name),
                             starts_at=start_dt,
                             ends_at=end_dt,
                         )
@@ -216,9 +234,9 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                             start_dt = datetime.combine(d, slot_t, tzinfo=tz)
                             end_dt = start_dt + duration
                             if _fits(
-                                problem,
                                 req,
                                 rules.min_gap_days,
+                                blackout,
                                 fid,
                                 start_dt,
                                 end_dt,
@@ -240,7 +258,7 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                         team_id=req.team_id,
                         field_id=fid,
                         event_type=req.event_type,
-                        title=f"{team_name.get(req.team_id, req.team_id)} {req.event_type}",
+                        title=_event_title(req, team_name),
                         starts_at=start_dt,
                         ends_at=end_dt,
                     )
@@ -251,6 +269,7 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                 week_events = [e for e in placed if e.team_id == req.team_id and e.event_type == req.event_type and e.starts_at.date() in set(week_dates)]
                 preferred[idx] = sorted((e.starts_at.weekday(), e.starts_at.time(), e.field_id) for e in week_events)
 
+            short_so_far[idx] += req.sessions_per_week - made
             if made < req.sessions_per_week:
                 shortfalls.append(
                     Shortfall(

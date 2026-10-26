@@ -84,6 +84,46 @@ def test_rules_round_trip_exact() -> None:
     assert Rules.from_dict(rules.to_dict()) == rules
 
 
+def test_rules_new_fields_round_trip_exact() -> None:
+    rules = Rules(
+        requirements=[
+            Requirement(
+                team_id="t1",
+                event_type="practice",
+                sessions_per_week=1,
+                duration_minutes=60,
+                title="U12 Monday Practice",
+            )
+        ],
+        min_gap_days=1,
+        blackout_dates=[date(2026, 12, 25)],
+        notes=["Could not map 'goalie clinic' to a known event type."],
+    )
+    assert Rules.from_dict(rules.to_dict()) == rules
+
+
+def test_rules_from_dict_without_new_fields_uses_defaults() -> None:
+    old = {
+        "requirements": [
+            {
+                "team_id": "t1",
+                "event_type": "practice",
+                "sessions_per_week": 1,
+                "duration_minutes": 60,
+                "allowed_days": [],
+                "allowed_fields": [],
+                "earliest_start": None,
+                "latest_end": None,
+            }
+        ],
+        "min_gap_days": 1,
+    }
+    rules = Rules.from_dict(old)
+    assert rules.blackout_dates == []
+    assert rules.notes == []
+    assert rules.requirements[0].title is None
+
+
 def test_proposal_round_trip_exact() -> None:
     problem = _problem()
     rules = Rules(
@@ -100,3 +140,30 @@ def test_proposal_round_trip_exact() -> None:
 def test_requirement_rejects_bad_day() -> None:
     with pytest.raises(ValueError):
         Requirement(team_id="t1", event_type="practice", sessions_per_week=1, duration_minutes=60, allowed_days=[7])
+
+
+def test_shortfall_summary_one_line_per_team_and_type() -> None:
+    from schedule_agent import Shortfall
+
+    rules = Rules(requirements=[])
+    proposal = Proposal(
+        rules=rules,
+        shortfalls=[
+            Shortfall(team_id="t2", event_type="game", week_start=date(2026, 9, 7), requested=1, placed=0, reason="B"),
+            Shortfall(team_id="t1", event_type="practice", week_start=date(2026, 9, 7), requested=2, placed=1, reason="A"),
+            Shortfall(team_id="t1", event_type="practice", week_start=date(2026, 9, 14), requested=2, placed=1, reason="A"),
+            Shortfall(team_id="t1", event_type="practice", week_start=date(2026, 9, 21), requested=2, placed=0, reason="C"),
+        ],
+    )
+    assert proposal.shortfalls  # per-week detail is kept
+    lines = proposal.shortfall_summary().splitlines()
+    assert len(lines) == 2  # one line per (team, event type)
+    assert lines[0].startswith("t1 practice: 2 of 6 placed")
+    assert "A" in lines[0]  # most common reason (2 of 3 weeks)
+    assert lines[1].startswith("t2 game: 0 of 1 placed")
+    assert "B" in lines[1]
+
+
+def test_shortfall_summary_empty_without_shortfalls() -> None:
+    proposal = Proposal(rules=Rules(requirements=[]))
+    assert proposal.shortfall_summary() == ""

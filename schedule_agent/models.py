@@ -7,6 +7,7 @@ access. All datetimes in and out are timezone-aware; wall-clock rules
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -165,6 +166,7 @@ class Requirement:
     allowed_fields: list[str] = field(default_factory=list)
     earliest_start: time | None = None
     latest_end: time | None = None
+    title: str | None = None
 
     def __post_init__(self) -> None:
         if not self.team_id or not isinstance(self.team_id, str):
@@ -188,6 +190,8 @@ class Requirement:
             and self.earliest_start >= self.latest_end
         ):
             raise ValueError("Requirement.earliest_start must be before latest_end")
+        if self.title is not None and not isinstance(self.title, str):
+            raise TypeError("Requirement.title must be a string or None")
         # Copy mutable inputs so callers cannot mutate us later.
         self.allowed_days = list(self.allowed_days)
         self.allowed_fields = [str(f) for f in self.allowed_fields]
@@ -203,6 +207,7 @@ class Requirement:
             "allowed_fields": list(self.allowed_fields),
             "earliest_start": self.earliest_start.isoformat() if self.earliest_start else None,
             "latest_end": self.latest_end.isoformat() if self.latest_end else None,
+            "title": self.title,
         }
 
     @classmethod
@@ -217,26 +222,38 @@ class Requirement:
             allowed_fields=[str(x) for x in d.get("allowed_fields", [])],
             earliest_start=_parse_time(d.get("earliest_start")),
             latest_end=_parse_time(d.get("latest_end")),
+            title=str(d["title"]) if d.get("title") is not None else None,
         )
 
 
 @dataclass
 class Rules:
-    """The structured scheduling ask: requirements plus the team gap rule."""
+    """The structured scheduling ask: requirements plus the team gap rule.
+
+    ``blackout_dates`` come from the request (e.g. a holiday the manager
+    mentioned); the solver merges them with ``Problem.blackout_dates``.
+    ``notes`` records things the model could not map, for the human to see.
+    """
 
     requirements: list[Requirement] = field(default_factory=list)
     min_gap_days: int = 1
+    blackout_dates: list[date] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not isinstance(self.min_gap_days, int) or self.min_gap_days < 0:
             raise ValueError("Rules.min_gap_days must be an int >= 0")
         self.requirements = list(self.requirements)
+        self.blackout_dates = [_parse_date(d) for d in self.blackout_dates]
+        self.notes = [str(n) for n in self.notes]
 
     def to_dict(self) -> dict:
         """Return a JSON-serialisable dict."""
         return {
             "requirements": [r.to_dict() for r in self.requirements],
             "min_gap_days": self.min_gap_days,
+            "blackout_dates": [d.isoformat() for d in self.blackout_dates],
+            "notes": list(self.notes),
         }
 
     @classmethod
@@ -245,6 +262,8 @@ class Rules:
         return cls(
             requirements=[Requirement.from_dict(x) for x in d.get("requirements", [])],
             min_gap_days=int(d.get("min_gap_days", 1)),
+            blackout_dates=[_parse_date(x) for x in d.get("blackout_dates", [])],
+            notes=[str(x) for x in d.get("notes", [])],
         )
 
 
@@ -417,6 +436,28 @@ class Proposal:
         self.events = list(self.events)
         self.check_results = list(self.check_results)
         self.shortfalls = list(self.shortfalls)
+
+    def shortfall_summary(self) -> str:
+        """One line per team and event type.
+
+        Each line gives total requested vs placed across the per-week
+        shortfalls plus the most common reason. The per-week
+        :attr:`shortfalls` list is kept as the detail. Returns ``""``
+        when there are no shortfalls. Deterministic: groups sorted by
+        (team, event type), ties in reason frequency broken by reason text.
+        """
+        groups: dict[tuple[str, str], list[Shortfall]] = {}
+        for item in self.shortfalls:
+            groups.setdefault((item.team_id, item.event_type), []).append(item)
+        lines: list[str] = []
+        for team_id, event_type in sorted(groups):
+            items = groups[(team_id, event_type)]
+            requested = sum(s.requested for s in items)
+            placed = sum(s.placed for s in items)
+            counts = Counter(s.reason for s in items)
+            common = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+            lines.append(f"{team_id} {event_type}: {placed} of {requested} placed; most common: {common}")
+        return "\n".join(lines)
 
     def to_dict(self) -> dict:
         """Return a JSON-serialisable dict (ISO 8601 dates and times)."""

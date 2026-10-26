@@ -166,3 +166,87 @@ def test_deterministic_same_input_same_output() -> None:
     first = solve(_basic_problem(), _basic_rules())
     second = solve(_basic_problem(), _basic_rules())
     assert first.to_dict() == second.to_dict()
+
+
+def _tight_3team_problem() -> Problem:
+    return Problem(
+        teams=[Team(id="t1", name="U10"), Team(id="t2", name="U12"), Team(id="t3", name="U14")],
+        fields=[Field(id="f1", name="North", open_from=time(17, 0), open_until=time(19, 0))],
+        season_start=date(2026, 9, 7),  # three Mondays: Sep 7, 14, 21
+        season_end=date(2026, 9, 27),
+        timezone=TZ,
+    )
+
+
+def _tight_3team_rules() -> Rules:
+    return Rules(
+        requirements=[
+            Requirement(team_id="t1", event_type="practice", sessions_per_week=1, duration_minutes=60, allowed_days=[0]),
+            Requirement(team_id="t2", event_type="practice", sessions_per_week=1, duration_minutes=60, allowed_days=[0]),
+            Requirement(team_id="t3", event_type="practice", sessions_per_week=1, duration_minutes=60, allowed_days=[0]),
+        ],
+        min_gap_days=0,
+    )
+
+
+def test_short_weeks_rotate_across_teams() -> None:
+    """Capacity is 2 per week (17:00 + 18:00) for 3 teams over 3 weeks.
+
+    Demand is 9, capacity is 6. Every team must still get at least one
+    week placed instead of the same team losing every week.
+    """
+    proposal = solve(_tight_3team_problem(), _tight_3team_rules())
+    assert len(proposal.events) == 6
+    by_team: dict[str, int] = {}
+    for ev in proposal.events:
+        by_team[ev.team_id] = by_team.get(ev.team_id, 0) + 1
+    assert by_team == {"t1": 2, "t2": 2, "t3": 2}
+    # Still deterministic.
+    again = solve(_tight_3team_problem(), _tight_3team_rules())
+    assert again.to_dict() == proposal.to_dict()
+
+
+def test_rules_blackout_dates_merge_with_problem() -> None:
+    """Blackout dates from the request block placement like Problem ones."""
+    problem = Problem(
+        teams=[Team(id="t1", name="U12")],
+        fields=[Field(id="f1", name="North", open_from=time(17, 0), open_until=time(18, 0))],
+        season_start=date(2026, 9, 7),
+        season_end=date(2026, 9, 13),
+        timezone=TZ,
+    )
+    rules = Rules(
+        requirements=[
+            Requirement(team_id="t1", event_type="practice", sessions_per_week=1, duration_minutes=60, allowed_days=[0])
+        ],
+        blackout_dates=[date(2026, 9, 7)],  # the only Monday
+    )
+    proposal = solve(problem, rules)
+    assert proposal.events == []
+    assert len(proposal.shortfalls) == 1
+    assert proposal.shortfalls[0].placed == 0
+
+
+def test_requirement_title_used_for_events() -> None:
+    problem = Problem(
+        teams=[Team(id="t1", name="U12")],
+        fields=[Field(id="f1", name="North", open_from=time(17, 0), open_until=time(18, 0))],
+        season_start=date(2026, 9, 7),
+        season_end=date(2026, 9, 13),
+        timezone=TZ,
+    )
+    rules = Rules(
+        requirements=[
+            Requirement(
+                team_id="t1",
+                event_type="practice",
+                sessions_per_week=1,
+                duration_minutes=60,
+                allowed_days=[0],
+                title="U12 Monday Practice",
+            )
+        ]
+    )
+    proposal = solve(problem, rules)
+    assert len(proposal.events) == 1
+    assert proposal.events[0].title == "U12 Monday Practice"

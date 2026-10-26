@@ -26,3 +26,7 @@ Thumbs.db
 # Local run output
 evals/runs/
 *.log
+
+# Installer / tool temp leftovers
+pip-*/
+tmp*/
