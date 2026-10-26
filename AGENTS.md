@@ -41,6 +41,45 @@ Built for the Meta Global AI Developer Hackathon (Oct 26 - Nov 4, 2026), Startup
 11. **Runs for judges.** `python -m pytest` passes offline (a fake model stands in). The demo runs
     with one command from a fresh clone, with a mock mode that needs no API key.
 
+## Library interface (stable - host apps depend on it)
+
+The private SquadRoot backend installs this package from a pinned git tag and calls it in-process.
+The demo app in `app/` must use exactly the same public interface, so the demo proves what the host gets.
+
+1. **Core is a library.** `schedule_agent/` imports only the standard library and `httpx`. It does no
+   database, web-framework or file I/O, reads no env vars except through `ModelConfig.from_env()`, and
+   never connects to a host app. `fastapi` / `uvicorn` are an optional extra (`pip install .[app]`) used
+   only by `app/`.
+2. **Public names**, exported from `schedule_agent/__init__.py`:
+   - Data: `Team(id, name)`, `Field(id, name, open_from=None, open_until=None)`,
+     `Busy(resource, start, end, reason="already booked")` where `resource` is `"team:<id>"` or
+     `"field:<id>"`, `Problem(teams, fields, season_start, season_end, timezone, busy=[], blackout_dates=[])`,
+     `Rules`, `Requirement`, `ProposedEvent(team_id, field_id, event_type, title, starts_at, ends_at)`,
+     `CheckResult`, `Shortfall`, `Proposal`.
+   - Agent: `ScheduleAgent(chat, *, explain_chat=None)`,
+     `agent.plan(problem, request, *, previous=None, verify=None) -> Proposal`,
+     `agent.revise(problem, proposal, request, *, verify=None) -> Proposal`.
+   - Model: `ModelConfig.from_env() -> ModelConfig | None` (None when no key), `chat_fn(config, *, temperature=0.0)`.
+   - Errors: `AgentError` (bad request / could not understand, safe to show the manager),
+     `ModelError` (provider failure, safe to show as "assistant unavailable").
+3. **Ids are opaque strings owned by the host** (SquadRoot uses UUIDs). Never parse them. Aliases
+   (T1, F1) exist only inside model prompts and are mapped back before anything is returned.
+4. **Times:** every datetime in and out is timezone-aware; wall-clock rules use `Problem.timezone` (IANA name).
+5. **Verify hook:** `verify(events: list[ProposedEvent]) -> list[Busy]` is called with each draft; it
+   returns extra busy times only the host knows (e.g. coach unavailability), with no reasons that name
+   people. The agent adds them and re-solves, at most 3 rounds. An empty list means accepted.
+6. **JSON:** `Proposal.to_dict()` and `Proposal.from_dict(d)`, and the same for `Rules`, round-trip
+   exactly (ISO 8601 strings for dates and times). `previous=` accepts a `Rules` or its dict, because
+   the host keeps it in the browser between requests.
+7. **The agent never applies anything.** `Proposal` is a draft. The host saves approved events through
+   its own permission and conflict checks.
+8. **Versioning:** semantic version in `pyproject.toml` and `schedule_agent.__version__`; git tag
+   `vX.Y.Z` per release. Any change to the names or shapes above is a breaking change: bump the major
+   version and note it in `CHANGELOG.md`.
+9. **Contract test:** `tests/test_interface.py` builds a Problem using only the public names, runs
+   `plan` and `revise` with a fake chat and a verify hook, and round-trips the Proposal through JSON.
+   It must keep passing; never weaken it to make a change fit.
+
 ## Stack
 
 - Python 3.12, `pyproject.toml`, standard library first.
