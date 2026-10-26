@@ -1,0 +1,271 @@
+"""Deterministic placement: the model never picks times, this solver does.
+
+Week-by-week greedy search. Same input always gives the same output: every
+loop runs in sorted order and there is no randomness. A field or a team is
+never double booked, and every wall-clock rule (field hours, earliest/latest,
+blackout dates, busy times, minimum gap) is enforced before a slot is taken.
+Anything that does not fit becomes a Shortfall with a plain reason.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+from .models import (
+    Problem,
+    Proposal,
+    ProposedEvent,
+    Requirement,
+    Rules,
+    Shortfall,
+)
+
+SLOT_STEP_MINUTES = 30
+
+
+def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+    return a_start < b_end and b_start < a_end
+
+
+def _weeks(start: date, end: date) -> list[list[date]]:
+    """Split [start, end] into 7-day chunks starting at ``start``."""
+    weeks: list[list[date]] = []
+    cursor = start
+    while cursor <= end:
+        chunk = [cursor + timedelta(days=i) for i in range(7) if cursor + timedelta(days=i) <= end]
+        weeks.append(chunk)
+        cursor += timedelta(days=7)
+    return weeks
+
+
+def _to_minutes(t: time) -> int:
+    return t.hour * 60 + t.minute
+
+
+def _day_grid(window_start: time, window_end: time, duration: timedelta) -> list[time]:
+    """Half-hour grid starts (00:00, 00:30, ...) fitting inside the window."""
+    out: list[time] = []
+    length = int(duration.total_seconds() // 60)
+    end_minutes = _to_minutes(window_end)
+    # A window ending at 23:59 means end of day: allow slots ending at midnight.
+    if window_end.hour == 23 and window_end.minute == 59:
+        end_minutes = 24 * 60
+    for minutes in range(0, 24 * 60, SLOT_STEP_MINUTES):
+        slot = time(minutes // 60, minutes % 60)
+        if minutes >= _to_minutes(window_start) and minutes + length <= end_minutes:
+            out.append(slot)
+    return out
+
+
+def _window(req: Requirement, field_open_from: time | None, field_open_until: time | None) -> tuple[time, time]:
+    start = req.earliest_start or time(0, 0)
+    end = req.latest_end or time(23, 59, 59)
+    if field_open_from is not None and field_open_from > start:
+        start = field_open_from
+    if field_open_until is not None and field_open_until < end:
+        end = field_open_until
+    # time(23,59,59) acts as end-of-day; clamp grid end to midnight.
+    if end == time(23, 59, 59):
+        end = time(23, 59)
+    return start, end
+
+
+def _fits(
+    problem: Problem,
+    req: Requirement,
+    min_gap_days: int,
+    field_id: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    placed: list[ProposedEvent],
+    team_busy: list[tuple[datetime, datetime]],
+    field_busy: list[tuple[datetime, datetime]],
+) -> bool:
+    day = start_dt.date()
+    if day in set(problem.blackout_dates):
+        return False
+    if req.allowed_days and start_dt.weekday() not in req.allowed_days:
+        return False
+    if req.allowed_fields and field_id not in req.allowed_fields:
+        return False
+    # Wall-clock comparisons on naive times.
+    start_t = start_dt.time()
+    end_t = end_dt.time()
+    if req.earliest_start is not None and start_t < req.earliest_start:
+        return False
+    if req.latest_end is not None and end_t > req.latest_end:
+        return False
+    for ev in placed:
+        if ev.team_id == req.team_id or ev.field_id == field_id:
+            if _overlaps(start_dt, end_dt, ev.starts_at, ev.ends_at):
+                return False
+        if ev.team_id == req.team_id and min_gap_days > 0:
+            if abs((day - ev.starts_at.date()).days) < min_gap_days:
+                return False
+    for b_start, b_end in team_busy:
+        if _overlaps(start_dt, end_dt, b_start, b_end):
+            return False
+    for b_start, b_end in field_busy:
+        if _overlaps(start_dt, end_dt, b_start, b_end):
+            return False
+    return True
+
+
+def solve(problem: Problem, rules: Rules) -> Proposal:
+    """Place every requirement week by week. Never raises for tight space.
+
+    Returns a Proposal with events sorted by start time and one Shortfall per
+    requirement per week where fewer sessions were placed than asked for.
+    """
+    tz = ZoneInfo(problem.timezone)
+    team_ids = {t.id for t in problem.teams}
+    team_name = {t.id: t.name for t in problem.teams}
+    field_ids = sorted(f.id for f in problem.fields)
+    field_by_id = {f.id: f for f in problem.fields}
+    blackout = set(problem.blackout_dates)
+
+    team_busy: dict[str, list[tuple[datetime, datetime]]] = {t.id: [] for t in problem.teams}
+    field_busy: dict[str, list[tuple[datetime, datetime]]] = {f.id: [] for f in problem.fields}
+    for b in problem.busy:
+        kind, _, rid = b.resource.partition(":")
+        if kind == "team" and rid in team_busy:
+            team_busy[rid].append((b.start, b.end))
+        elif kind == "field" and rid in field_busy:
+            field_busy[rid].append((b.start, b.end))
+        # Unknown resources are ignored: the host owns ids we never saw.
+
+    order = sorted(range(len(rules.requirements)), key=lambda i: (rules.requirements[i].team_id, rules.requirements[i].event_type))
+    placed: list[ProposedEvent] = []
+    shortfalls: list[Shortfall] = []
+    preferred: dict[int, list[tuple[int, time, str]]] = {}
+
+    for week_dates in _weeks(problem.season_start, problem.season_end):
+        week_start = week_dates[0]
+        by_weekday = {}
+        for d in week_dates:
+            by_weekday.setdefault(d.weekday(), d)
+        for idx in order:
+            req = rules.requirements[idx]
+            if req.sessions_per_week == 0:
+                continue
+            if req.team_id not in team_ids:
+                shortfalls.append(
+                    Shortfall(
+                        team_id=req.team_id,
+                        event_type=req.event_type,
+                        week_start=week_start,
+                        requested=req.sessions_per_week,
+                        placed=0,
+                        reason=f"Unknown team '{req.team_id}': nothing placed for week starting {week_start.isoformat()}.",
+                    )
+                )
+                continue
+            valid_fields = [f for f in (req.allowed_fields or field_ids) if f in field_by_id]
+            valid_fields.sort()
+            if not valid_fields:
+                shortfalls.append(
+                    Shortfall(
+                        team_id=req.team_id,
+                        event_type=req.event_type,
+                        week_start=week_start,
+                        requested=req.sessions_per_week,
+                        placed=0,
+                        reason=f"No known fields for {team_name.get(req.team_id, req.team_id)} in week starting {week_start.isoformat()}.",
+                    )
+                )
+                continue
+            valid_days = sorted(set(req.allowed_days)) if req.allowed_days else list(range(7))
+            duration = timedelta(minutes=req.duration_minutes)
+            made = 0
+
+            # 1) Reuse the rhythm found in the first placed week, where possible.
+            for weekday, slot_t, fid in preferred.get(idx, []):
+                if made >= req.sessions_per_week:
+                    break
+                d = by_weekday.get(weekday)
+                if d is None or d in blackout or fid not in valid_fields:
+                    continue
+                start_dt = datetime.combine(d, slot_t, tzinfo=tz)
+                end_dt = start_dt + duration
+                if _fits(problem, req, rules.min_gap_days, fid, start_dt, end_dt, placed, team_busy.get(req.team_id, []), field_busy.get(fid, [])):
+                    placed.append(
+                        ProposedEvent(
+                            team_id=req.team_id,
+                            field_id=fid,
+                            event_type=req.event_type,
+                            title=f"{team_name.get(req.team_id, req.team_id)} {req.event_type}",
+                            starts_at=start_dt,
+                            ends_at=end_dt,
+                        )
+                    )
+                    made += 1
+
+            # 2) Greedy search in deterministic order: date, field, time.
+            while made < req.sessions_per_week:
+                found = None
+                for d in sorted(week_dates):
+                    if d.weekday() not in valid_days or d in blackout:
+                        continue
+                    for fid in valid_fields:
+                        f = field_by_id[fid]
+                        w_start, w_end = _window(req, f.open_from, f.open_until)
+                        if w_start >= w_end:
+                            continue
+                        for slot_t in _day_grid(w_start, w_end, duration):
+                            start_dt = datetime.combine(d, slot_t, tzinfo=tz)
+                            end_dt = start_dt + duration
+                            if _fits(
+                                problem,
+                                req,
+                                rules.min_gap_days,
+                                fid,
+                                start_dt,
+                                end_dt,
+                                placed,
+                                team_busy.get(req.team_id, []),
+                                field_busy.get(fid, []),
+                            ):
+                                found = (fid, start_dt, end_dt)
+                                break
+                        if found is not None:
+                            break
+                    if found is not None:
+                        break
+                if found is None:
+                    break
+                fid, start_dt, end_dt = found
+                placed.append(
+                    ProposedEvent(
+                        team_id=req.team_id,
+                        field_id=fid,
+                        event_type=req.event_type,
+                        title=f"{team_name.get(req.team_id, req.team_id)} {req.event_type}",
+                        starts_at=start_dt,
+                        ends_at=end_dt,
+                    )
+                )
+                made += 1
+
+            if idx not in preferred and made > 0:
+                week_events = [e for e in placed if e.team_id == req.team_id and e.event_type == req.event_type and e.starts_at.date() in set(week_dates)]
+                preferred[idx] = sorted((e.starts_at.weekday(), e.starts_at.time(), e.field_id) for e in week_events)
+
+            if made < req.sessions_per_week:
+                shortfalls.append(
+                    Shortfall(
+                        team_id=req.team_id,
+                        event_type=req.event_type,
+                        week_start=week_start,
+                        requested=req.sessions_per_week,
+                        placed=made,
+                        reason=(
+                            f"Only {made} of {req.sessions_per_week} {req.event_type} sessions placed "
+                            f"for {team_name.get(req.team_id, req.team_id)} in week starting {week_start.isoformat()}: "
+                            "no free field/team slot inside hours, busy times and gap rule."
+                        ),
+                    )
+                )
+
+    placed.sort(key=lambda e: (e.starts_at, e.team_id, e.field_id))
+    return Proposal(rules=rules, events=placed, check_results=[], shortfalls=shortfalls, summary="")
