@@ -17,13 +17,16 @@ from __future__ import annotations
 import inspect
 import time
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .checks import run_checks
+from .disruption import Disruption, parse_disruption
 from .errors import AgentError
 from .explain import explain_proposal
 from .llm import ChatFn
-from .models import ApplyResult, Busy, Problem, Proposal, ProposedEvent, Rules
+from .models import ApplyResult, Busy, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
 from .solver import solve
 from .understand import understand_request
 
@@ -45,6 +48,41 @@ def _accepts_usage_out(fn: ChatFn) -> bool:
     except (TypeError, ValueError):
         return False
     return any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()) or "usage_out" in params
+
+
+def _rebuild(problem: Problem, busy: list[Busy]) -> Problem:
+    """Copy of ``problem`` with a different busy list (caller's copy untouched)."""
+    return Problem(
+        teams=problem.teams,
+        fields=problem.fields,
+        season_start=problem.season_start,
+        season_end=problem.season_end,
+        timezone=problem.timezone,
+        busy=busy,
+        blackout_dates=problem.blackout_dates,
+    )
+
+
+def _kept_busy(kept: list[ProposedEvent]) -> list[Busy]:
+    """Freeze kept events: their team and field are busy at those times."""
+    out: list[Busy] = []
+    for ev in kept:
+        out.append(Busy(resource=f"team:{ev.team_id}", start=ev.starts_at, end=ev.ends_at, reason="kept event"))
+        out.append(Busy(resource=f"field:{ev.field_id}", start=ev.starts_at, end=ev.ends_at, reason="kept event"))
+    return out
+
+
+def _closed_day_busy(closed: set[str], disruption: Disruption, tz: ZoneInfo) -> list[Busy]:
+    """Whole-day busy on the closed fields only, for each disruption date."""
+    out: list[Busy] = []
+    day = disruption.date_from
+    while day <= disruption.date_to:
+        start = datetime.combine(day, datetime.min.time(), tzinfo=tz)
+        end = start + timedelta(days=1)
+        for fid in sorted(closed):
+            out.append(Busy(resource=f"field:{fid}", start=start, end=end, reason="field closed"))
+        day += timedelta(days=1)
+    return out
 
 
 def _normalize_previous(previous: Rules | dict[str, Any] | None) -> Rules | None:
@@ -195,6 +233,224 @@ class ScheduleAgent:
                 "The agent applies nothing: save these through your own permission and conflict checks."
             ),
         )
+
+    def reschedule(
+        self,
+        problem: Problem,
+        events: list[ProposedEvent] | list[dict[str, Any]],
+        request: str,
+        *,
+        verify: VerifyHook | None = None,
+    ) -> Proposal:
+        """Move only the sessions hit by a disruption (rain, closed fields).
+
+        The model turns ``request`` into dates + closed fields; code finds
+        the events hit, freezes every other event as busy, blocks whole
+        days on the closed fields only, and re-places only the hit
+        sessions with the existing solver inside the search window. Each
+        move keeps its duration, type and title. The summary lists every
+        move as old time/field -> new time/field; shortfalls name the
+        sessions that could not be moved. Coach busy times
+        (``Problem.busy`` and ``verify``) apply as in :meth:`plan`.
+        Re-placement uses ``min_gap_days=0``: kept sessions stay exactly
+        where they are and moves just need a free slot.
+        """
+        self.last_trace = []
+        current = self._coerce_events(events)
+        disruption = parse_disruption(problem, request, self._traced(self._chat, "disruption", self._chat_usage))
+        closed = disruption.closed_ids(problem)
+        self.last_trace.append(
+            {
+                "step": "disruption",
+                "from": disruption.date_from.isoformat(),
+                "to": disruption.date_to.isoformat(),
+                "closed_fields": len(closed),
+                "notes": len(disruption.notes),
+            }
+        )
+        return self._finish_reschedule(problem, current, disruption, closed, verify)
+
+    @staticmethod
+    def _coerce_events(events: object) -> list[ProposedEvent]:
+        """Accept ProposedEvents or their dicts (the host JSON-round-trips)."""
+        if not isinstance(events, list):
+            raise AgentError("The saved calendar could not be read; please start a new request.")
+        out: list[ProposedEvent] = []
+        for item in events:
+            if isinstance(item, ProposedEvent):
+                out.append(item)
+            elif isinstance(item, dict):
+                try:
+                    out.append(ProposedEvent.from_dict(item))
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise AgentError("The saved calendar could not be read; please start a new request.") from exc
+            else:
+                raise AgentError("The saved calendar could not be read; please start a new request.")
+        return out
+
+    def _finish_reschedule(
+        self,
+        problem: Problem,
+        current: list[ProposedEvent],
+        disruption: Disruption,
+        closed: set[str],
+        verify: VerifyHook | None,
+    ) -> Proposal:
+        """Freeze kept events, re-place hit sessions, verify (max 3 rounds), explain."""
+        tz = ZoneInfo(problem.timezone)
+        hit: list[ProposedEvent] = []
+        kept: list[ProposedEvent] = []
+        for ev in current:
+            day = ev.starts_at.astimezone(tz).date()
+            if disruption.date_from <= day <= disruption.date_to and ev.field_id in closed:
+                hit.append(ev)
+            else:
+                kept.append(ev)
+        hit.sort(key=lambda e: (e.starts_at, e.team_id, e.field_id, e.title))
+        self.last_trace.append({"step": "reschedule", "hit": len(hit), "kept": len(kept)})
+
+        frozen = _kept_busy(kept) + _closed_day_busy(closed, disruption, tz)
+        seen = {(b.resource, b.start, b.end) for b in problem.busy} | {
+            (b.resource, b.start, b.end) for b in frozen
+        }
+        extra: list[Busy] = []
+        rounds = 0
+        while True:
+            working = _rebuild(problem, list(problem.busy) + frozen + extra)
+            moves, shortfalls, rules = self._place_moves(problem, working, disruption, hit, rounds)
+            ordered = sorted(kept + [new for _, new in moves], key=lambda e: (e.starts_at, e.team_id, e.field_id))
+            # Final checks run against the real calendar (kept events would
+            # trivially "collide" with the freeze-busy used for solving).
+            checking = _rebuild(problem, list(problem.busy) + extra)
+            results = run_checks(checking, rules, ordered)
+            failed = sum(1 for c in results if not c.passed)
+            self.last_trace.append({"step": "checks", "round": rounds, "results": len(results), "failed": failed})
+            reported = self._call_verify(verify, ordered) if verify is not None else []
+            new = [b for b in reported if (b.resource, b.start, b.end) not in seen]
+            self.last_trace.append(
+                {
+                    "step": "verify",
+                    "round": rounds,
+                    "reported": len(reported),
+                    "new_busy": len(new),
+                    "re_solve": bool(new) and rounds < MAX_VERIFY_ROUNDS,
+                }
+            )
+            if not new or rounds >= MAX_VERIFY_ROUNDS:
+                proposal = Proposal(rules=rules, events=ordered, check_results=results, shortfalls=shortfalls)
+                proposal.summary = self._moves_summary(problem, moves) + "\n" + self._explain(checking, proposal)
+                return proposal
+            for busy in new:
+                seen.add((busy.resource, busy.start, busy.end))
+            extra.extend(new)
+            rounds += 1
+
+    def _place_moves(
+        self,
+        problem: Problem,
+        working: Problem,
+        disruption: Disruption,
+        hit: list[ProposedEvent],
+        outer_round: int,
+    ) -> tuple[list[tuple[ProposedEvent, ProposedEvent]], list[Shortfall], Rules]:
+        """Re-place each hit session with its own solver run; keep the earliest slot.
+
+        One requirement per hit session (sessions_per_week=1) with the
+        session's own duration, type and title. A multi-week search window
+        can yield one slot per week; only the earliest is kept, so each
+        session moves exactly once.
+        """
+        tz = ZoneInfo(problem.timezone)
+        window_end = disruption.date_to + timedelta(days=disruption.search_days)
+        busy_now = list(working.busy)
+        field_name = {f.id: f.name for f in problem.fields}
+        moves: list[tuple[ProposedEvent, ProposedEvent]] = []
+        shortfalls: list[Shortfall] = []
+        requirements: list[Requirement] = []
+        for i, old in enumerate(hit):
+            minutes = int((old.ends_at - old.starts_at).total_seconds() // 60)
+            req = Requirement(
+                team_id=old.team_id,
+                event_type=old.event_type,
+                sessions_per_week=1,
+                duration_minutes=max(1, minutes),
+                title=old.title,
+            )
+            requirements.append(req)
+            sub = Problem(
+                teams=problem.teams,
+                fields=problem.fields,
+                season_start=disruption.date_from,
+                season_end=window_end,
+                timezone=problem.timezone,
+                busy=busy_now,
+                blackout_dates=problem.blackout_dates,
+            )
+            draft = solve(sub, Rules(requirements=[req], min_gap_days=0))
+            self.last_trace.append(
+                {
+                    "step": "solve",
+                    "round": outer_round,
+                    "session": i,
+                    "events": len(draft.events),
+                    "shortfalls": len(draft.shortfalls),
+                }
+            )
+            if draft.events:
+                new = min(draft.events, key=lambda e: e.starts_at)
+                moves.append((old, new))
+                busy_now.append(
+                    Busy(resource=f"team:{new.team_id}", start=new.starts_at, end=new.ends_at, reason="moved event")
+                )
+                busy_now.append(
+                    Busy(
+                        resource=f"field:{new.field_id}",
+                        start=new.starts_at,
+                        end=new.ends_at,
+                        reason="moved event",
+                    )
+                )
+            else:
+                monday = old.starts_at.astimezone(tz).date() - timedelta(days=old.starts_at.astimezone(tz).weekday())
+                shortfalls.append(
+                    Shortfall(
+                        team_id=old.team_id,
+                        event_type=old.event_type,
+                        week_start=monday,
+                        requested=1,
+                        placed=0,
+                        reason=(
+                            f"Could not move '{old.title}' "
+                            f"({old.starts_at.isoformat()} at {field_name.get(old.field_id, old.field_id)}): "
+                            "no free team/field slot inside the search window."
+                        ),
+                    )
+                )
+        if disruption.field_ids:
+            scope = "closed: " + ",".join(sorted(disruption.field_ids))
+        else:
+            scope = "all fields closed"
+        notes = [
+            f"Disruption {disruption.date_from.isoformat()}..{disruption.date_to.isoformat()}; "
+            f"{scope}; search {disruption.search_days}d."
+        ]
+        notes.extend(disruption.notes)
+        rules = Rules(requirements=requirements, min_gap_days=0, notes=notes)
+        return moves, shortfalls, rules
+
+    @staticmethod
+    def _moves_summary(problem: Problem, moves: list[tuple[ProposedEvent, ProposedEvent]]) -> str:
+        """Deterministic move list: each move as old time/field -> new time/field."""
+        if not moves:
+            return "No sessions needed moving."
+        field_name = {f.id: f.name for f in problem.fields}
+        lines = [f"Moved {len(moves)} session(s):"]
+        for old, new in moves:
+            lines.append(
+                f"- {new.title}: {old.starts_at.isoformat()} at {field_name.get(old.field_id, old.field_id)} "
+                f"-> {new.starts_at.isoformat()} at {field_name.get(new.field_id, new.field_id)}"
+            )
+        return "\n".join(lines)
 
     def _traced(self, inner: ChatFn, name: str, forwards_usage: bool) -> ChatFn:
         """Wrap a chat function so each call appends a step to the trace."""

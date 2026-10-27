@@ -12,9 +12,11 @@ from zoneinfo import ZoneInfo
 from schedule_agent import (
     ApplyResult,
     Busy,
+    Disruption,
     Field,
     Problem,
     Proposal,
+    ProposedEvent,
     Rules,
     ScheduleAgent,
     Team,
@@ -119,6 +121,73 @@ def test_approve_is_the_only_path_to_apply_result() -> None:
     assert result.events == proposal.events
     assert ApplyResult().approved is False  # default construction is not an approval
     assert ApplyResult.from_dict(json.loads(json.dumps(result.to_dict()))) == result
+
+
+DISRUPTION_JSON = json.dumps(
+    {
+        "date_from": "2026-09-10",
+        "date_to": "2026-09-10",
+        "closed_field_aliases": ["F1"],
+        "all_fields": False,
+        "search_days": 7,
+        "notes": [],
+    }
+)
+
+
+def fake_disruption_chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+    if response_format is not None:
+        return DISRUPTION_JSON
+    return "Moved the Thursday session."
+
+
+def test_reschedule_moves_only_hit_sessions() -> None:
+    tz = ZoneInfo(TZ)
+    problem = Problem(
+        teams=[Team(id="t1", name="U12")],
+        fields=[
+            Field(id="f1", name="North", open_from=time(17, 0), open_until=time(20, 0)),
+            Field(id="f2", name="South", open_from=time(17, 0), open_until=time(20, 0)),
+        ],
+        season_start=date(2026, 9, 7),
+        season_end=date(2026, 9, 20),
+        timezone=TZ,
+    )
+
+    def at(day: int, hour: int) -> datetime:
+        return datetime(2026, 9, day, hour, 0, tzinfo=tz)
+
+    events = [
+        ProposedEvent(
+            team_id="t1",
+            field_id="f1",
+            event_type="practice",
+            title="Mon",
+            starts_at=at(7, 17),
+            ends_at=at(7, 18),
+        ),
+        ProposedEvent(
+            team_id="t1",
+            field_id="f1",
+            event_type="practice",
+            title="Thu",
+            starts_at=at(10, 17),
+            ends_at=at(10, 18),
+        ),
+    ]
+    agent = ScheduleAgent(fake_disruption_chat)
+    proposal = agent.reschedule(problem, events, "rain Thursday, North closed", verify=lambda draft: [])
+    by_title = {e.title: e for e in proposal.events}
+    assert (by_title["Mon"].starts_at, by_title["Mon"].field_id) == (at(7, 17), "f1")  # kept never moves
+    assert (by_title["Thu"].starts_at, by_title["Thu"].field_id) == (at(10, 17), "f2")  # open field still used
+    assert all(c.passed for c in proposal.check_results)
+    assert "->" in proposal.summary  # each move listed old time/field -> new time/field
+    assert agent.approve(proposal).approved is True
+    assert Proposal.from_dict(json.loads(json.dumps(proposal.to_dict()))) == proposal
+    assert Disruption(date_from=date(2026, 9, 10), date_to=date(2026, 9, 10), field_ids=[]).closed_ids(problem) == {
+        "f1",
+        "f2",
+    }
 
 
 def test_plan_accepts_previous_rules_and_dict() -> None:

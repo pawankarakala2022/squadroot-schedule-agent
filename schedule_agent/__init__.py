@@ -1,6 +1,7 @@
 """SquadRoot Schedule Agent core library (no I/O, no web framework)."""
 
 from .agent import ScheduleAgent
+from .disruption import Disruption, parse_disruption
 from .errors import AgentError, ModelError
 from .explain import explain_proposal
 from .llm import ChatFn, ModelConfig, chat_fn
@@ -20,7 +21,7 @@ from .models import (
 )
 from .understand import understand_request
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 __all__ = [
     "__version__",
@@ -38,6 +39,8 @@ __all__ = [
     "Proposal",
     "Plan",
     "ApplyResult",
+    "Disruption",
+    "parse_disruption",
     "ScheduleAgent",
     "ModelConfig",
     "ChatFn",
