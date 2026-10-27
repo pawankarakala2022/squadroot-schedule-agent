@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Record voice note (16 kHz mono WAV)</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; }
+  button { font-size: 1.2rem; padding: .6rem 1.2rem; margin-right: .5rem; }
+  #status { margin-top: 1rem; }
+</style>
+<h1>Record voice note</h1>
+<p>Read <code>demo/voice_note.txt</code> aloud. Saves 16&nbsp;kHz mono WAV,
+which is what <code>--voice</code> accepts.</p>
+<button id="rec">Record</button>
+<button id="stop" disabled>Stop</button>
+<a id="dl" style="display:none">Download my_note.wav</a>
+<p id="status">Idle.</p>
+<script>
+let ctx, src, proc, chunks, inRate;
+const rec = document.getElementById('rec'), stopBtn = document.getElementById('stop'),
+      dl = document.getElementById('dl'), status = document.getElementById('status');
+rec.onclick = async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  inRate = ctx.sampleRate;
+  src = ctx.createMediaStreamSource(stream);
+  proc = ctx.createScriptProcessor(4096, 1, 1);
+  chunks = [];
+  proc.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  src.connect(proc);
+  proc.connect(ctx.destination);
+  rec.disabled = true;
+  stopBtn.disabled = false;
+  status.textContent = 'Recording…';
+};
+stopBtn.onclick = () => {
+  proc.disconnect();
+  src.disconnect();
+  ctx.close();
+  let n = 0;
+  for (const c of chunks) n += c.length;
+  const flat = new Float32Array(n);
+  let o = 0;
+  for (const c of chunks) { flat.set(c, o); o += c.length; }
+  const outRate = 16000;
+  const outLen = Math.floor(flat.length * outRate / inRate);
+  const res = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * inRate / outRate;
+    const i0 = Math.floor(pos), frac = pos - i0;
+    const a = flat[i0] || 0, b = flat[i0 + 1] || 0;
+    res[i] = a + (b - a) * frac;
+  }
+  const buf = new ArrayBuffer(44 + outLen * 2);
+  const v = new DataView(buf);
+  const wstr = (p, s) => { for (let i = 0; i < s.length; i++) v.setUint8(p + i, s.charCodeAt(i)); };
+  wstr(0, 'RIFF');
+  v.setUint32(4, 36 + outLen * 2, true);
+  wstr(8, 'WAVE');
+  wstr(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, outRate, true);
+  v.setUint32(28, outRate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  wstr(36, 'data');
+  v.setUint32(40, outLen * 2, true);
+  for (let i = 0; i < outLen; i++) {
+    const s = Math.max(-1, Math.min(1, res[i]));
+    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  dl.href = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  dl.download = 'my_note.wav';
+  dl.style.display = 'inline';
+  rec.disabled = false;
+  stopBtn.disabled = true;
+  status.textContent = 'Done. Save my_note.wav into the repo folder, then rerun with --voice my_note.wav';
+};
+</script>
+</html>

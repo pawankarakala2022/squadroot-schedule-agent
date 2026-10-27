@@ -8,9 +8,9 @@ library + httpx, no file I/O (bytes in, text out), env only via
 :meth:`VoiceConfig.from_env`. Provider failures raise
 :class:`ModelError` without ever including the API key; anything ending
 in ``-contributor`` is refused everywhere. WAV upload verified
-end-to-end (mono 16-bit PCM at 16 or 24 kHz); other containers are
-passed through with a best-effort encoding hint and validated by the
-server.
+end-to-end (mono 16-bit PCM at 16 or 24 kHz); other containers are sent
+with a best-effort hint but the server rejected every non-WAV variant in
+live tests ("Malformed request"), so prefer WAV (see record_voice_note.html).
 """
 
 from __future__ import annotations
