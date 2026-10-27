@@ -1,5 +1,6 @@
 """SquadRoot Schedule Agent core library (no I/O, no web framework)."""
 
+from .agent import ScheduleAgent
 from .errors import AgentError, ModelError
 from .explain import explain_proposal
 from .llm import ChatFn, ModelConfig, chat_fn
@@ -35,6 +36,7 @@ __all__ = [
     "Shortfall",
     "Proposal",
     "Plan",
+    "ScheduleAgent",
     "ModelConfig",
     "ChatFn",
     "chat_fn",
