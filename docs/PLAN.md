@@ -78,6 +78,34 @@ fields that are still open, keep everything else where it is.
 > use (demo data lists languages per team, no names). Same facts in every language: verify dates,
 > times and field names appear exactly in every draft; regenerate once if not.
 
+## Review backlog (from the 2026-10-27 voice-capability review)
+
+Voice input already feeds the whole loop (transcript -> plan / revise /
+reschedule / notices), but the review found gaps. Cancellations are
+being built now (`agent.cancel` + `CancelFilter`). Evaluate each item
+below when scoping the next phase; build only what fits, in this order.
+The "if time runs short" cut order at the bottom still applies.
+
+1. Coach-availability parsing by voice ("coach can't do Thursdays
+   anymore") -> validated `Busy` list, same strict json_schema +
+   drop-and-report pattern as `parse_disruption`. Coach stays a time
+   dimension only: no coach entity, no names.
+2. Post-approval edits: a voice change to the live calendar is a fresh
+   `plan` / `reschedule` / `cancel` + re-approve (the host saves).
+   Document the flow; do not invent an apply path.
+3. Multi-intent voice notes ("create X, move Y, tell families"):
+   plan -> approve -> `draft_notices` chained by the host/demo, with the
+   transcript visible in the agent trace.
+4. Clarification turn: a vague request currently fails with "please
+   rephrase". Consider one follow-up question before failing.
+5. Voice approval stays out of scope: approval is an explicit human
+   action in the host; a voice "yeah, go ahead" has no speaker
+   verification and must never approve.
+6. "My team" scoping: the host narrows the `Problem` to the speaker's
+   teams before the model sees it (host-side, needed for the demo).
+7. Voice eval cases: clean transcripts plus noisy ones (misheard team /
+   field names must be dropped and reported, never guessed).
+
 ## Phase 7 - Open weights + evals (Sat Oct 31 - Sun Nov 1)
 
 > Build `evals/`: 25 fictional cases (English, Spanish, Hindi, Punjabi, Vietnamese; tight fields;

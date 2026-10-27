@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from schedule_agent import (
     ApplyResult,
     Busy,
+    CancelFilter,
     Disruption,
     FamilyNotices,
     Field,
@@ -25,6 +26,7 @@ from schedule_agent import (
     draft_notices,
     extract_games,
     games_to_busy,
+    parse_cancel_filter,
 )
 
 TZ = "America/Toronto"
@@ -293,6 +295,54 @@ def test_vision_games_become_busy_for_plan() -> None:
     for event in proposal.events:
         assert not (event.team_id == "t1" and event.starts_at < game_busy.end and game_busy.start < event.ends_at)
     assert all(c.passed for c in proposal.check_results)
+
+
+def test_cancel_removes_only_matched_sessions() -> None:
+    tz = ZoneInfo(TZ)
+    problem = Problem(
+        teams=[Team(id="t1", name="U12")],
+        fields=[Field(id="f1", name="North", open_from=time(17, 0), open_until=time(20, 0))],
+        season_start=date(2026, 9, 7),
+        season_end=date(2026, 9, 20),
+        timezone=TZ,
+    )
+
+    def at(day: int, hour: int) -> datetime:
+        return datetime(2026, 9, day, hour, 0, tzinfo=tz)
+
+    saved = [
+        ProposedEvent(team_id="t1", field_id="f1", event_type="practice", title="Mon",
+                      starts_at=at(7, 17), ends_at=at(7, 18)),
+        ProposedEvent(team_id="t1", field_id="f1", event_type="practice", title="Thu",
+                      starts_at=at(10, 17), ends_at=at(10, 18)),
+    ]
+    cancel_json = json.dumps(
+        {
+            "team_aliases": ["T1"],
+            "field_aliases": [],
+            "weekdays": [3],
+            "date_from": "",
+            "date_to": "",
+            "event_types": [],
+            "notes": [],
+        }
+    )
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            return cancel_json
+        return "Thursday session cancelled."
+
+    filt = parse_cancel_filter(problem, "cancel Thursday", chat)
+    assert isinstance(filt, CancelFilter)
+    assert CancelFilter.from_dict(json.loads(json.dumps(filt.to_dict()))) == filt
+    agent = ScheduleAgent(chat)
+    proposal = agent.cancel(problem, saved, "cancel Thursday U12 practice")
+    assert [e.title for e in proposal.events] == ["Mon"]  # kept never moves
+    assert "Thu" in proposal.summary
+    assert all(c.passed for c in proposal.check_results)
+    assert agent.approve(proposal).approved is True
+    assert Proposal.from_dict(json.loads(json.dumps(proposal.to_dict()))) == proposal
 
 
 def test_approved_change_drafts_verified_family_notices() -> None:

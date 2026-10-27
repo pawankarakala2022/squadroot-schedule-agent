@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.2.0 (2026-10-27)
+
+Additive, backward compatible: cancellations. `CancelFilter` (team /
+field / weekday / date-range / session-type allow-lists with `matches`
+in the problem timezone, JSON round-trip) plus `parse_cancel_filter`
+(model report to validated filter: T/F aliases, unknown ids dropped
+and reported, unselective filters rejected, one repair retry) and
+`ScheduleAgent.cancel(problem, events, request)`: removes only matched
+sessions, kept sessions stay exactly where they are, checks run once
+on the remainder, the summary lists each cancellation. A request
+matching nothing fails safely with `AgentError`; approval still goes
+through `approve()`. No existing name or shape changed.
+
 ## v3.1.0 (2026-10-27)
 
 Additive, backward compatible: Phase 6 family notices.

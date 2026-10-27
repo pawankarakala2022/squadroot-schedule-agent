@@ -57,7 +57,8 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
      `Rules`, `Requirement`, `ProposedEvent(team_id, field_id, event_type, title, starts_at, ends_at)`,
      `CheckResult`, `Shortfall`, `Proposal`, `ApplyResult`,
      `Disruption(date_from, date_to, field_ids=[] meaning all, search_days=7,
-     not_before=None, notes=[])`.
+     not_before=None, notes=[])`, `CancelFilter(team_ids=[], field_ids=[],
+     weekdays=[], date_from=None, date_to=None, event_types=[], notes=[])`.
    - Agent: `ScheduleAgent(chat, *, explain_chat=None)`,
      `agent.plan(problem, request, *, previous=None, verify=None) -> Proposal`,
      `agent.revise(problem, proposal, request, *, verify=None) -> Proposal`,
@@ -66,7 +67,11 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
      `agent.reschedule(problem, events, request, *, verify=None, not_before=None,
      allowed_fields=None) -> Proposal` (rain/closed fields: only hit sessions
      move, summary lists each move as old time/field -> new time/field; host
-     pins for move date/ground options, latest not_before wins).
+     pins for move date/ground options, latest not_before wins),
+     `agent.cancel(problem, events, request) -> Proposal` (cancellations: the model
+     turns the request into a `CancelFilter` via `parse_cancel_filter`, code removes
+     only matched sessions, kept sessions stay exactly where they are, the summary
+     lists each cancellation; a request matching nothing fails safely).
    - Model: `ModelConfig.from_env() -> ModelConfig | None` (None when no key), `chat_fn(config, *, temperature=0.0)`.
    - Voice: `VoiceConfig.from_env() -> VoiceConfig | None`, `transcribe_audio(config, audio_bytes, *, filename=..., mime_type=None, language=None) -> str`.
    - Vision: `GameImport`, `ScheduleImport`, `extract_games(problem, image_bytes, chat, *, mime_type="image/png") -> ScheduleImport`, `games_to_busy(schedule, problem, *, duration_minutes=60) -> list[Busy]`.

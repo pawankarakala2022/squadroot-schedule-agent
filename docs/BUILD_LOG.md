@@ -1,4 +1,5 @@
 # Build log
+- 2026-10-27: Cancellations built: schedule_agent/cancel.py (CancelFilter + parse_cancel_filter) and agent.cancel() (matched sessions removed, kept untouched, summary lists each, safe no-match) plus tests/test_cancel.py and contract test; review backlog (coach-availability parsing, post-approval edits, multi-intent, clarification, no voice approval, my-team scoping, voice evals) added to docs/PLAN.md; v3.2.0 + CHANGELOG + AGENTS.md names; 127 pytest tests green. (Muse Code)
 - 2026-10-27: Phase 6 built: schedule_agent/notify.py (draft_notices with exact-fact verification, one repair retry, gaps reported never silent) plus tests/test_notify.py, contract test, demo/family_languages.json; v3.1.0 + CHANGELOG + AGENTS.md names; 115 pytest tests green. (Muse Code)
 
 One line per piece of work: date (ET), what was built, who / what wrote it.

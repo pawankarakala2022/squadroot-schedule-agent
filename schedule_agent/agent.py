@@ -21,6 +21,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .cancel import parse_cancel_filter
 from .checks import run_checks
 from .disruption import Disruption, parse_disruption
 from .errors import AgentError
@@ -305,6 +306,71 @@ class ScheduleAgent:
         return self._finish_reschedule(
             problem, current, disruption, closed, verify, window_start, pin_fields, pin_notes
         )
+
+    def cancel(
+        self,
+        problem: Problem,
+        events: list[ProposedEvent] | list[dict[str, Any]],
+        request: str,
+    ) -> Proposal:
+        """Cancel the saved sessions matching a plain-words request.
+
+        The model turns ``request`` into dates / teams / fields / session
+        types (aliases T1/F1, unknown ids dropped and reported); code
+        matches the saved calendar, keeps everything else exactly where
+        it is, and returns a draft whose events are the remaining
+        sessions. The summary lists every cancellation; the rules notes
+        record what the filter matched and what was dropped. Removing
+        sessions cannot create a conflict, so checks run once on the
+        remainder (``min_gap_days=0``) and no verify round is needed:
+        nothing is re-solved. A request that matches nothing, or that
+        selects the whole calendar without saying so, fails safely with
+        :class:`AgentError` and nothing is proposed. As with every draft,
+        cancelling applies only after :meth:`approve` -- except an empty
+        remainder has no checks to pass, so the host confirms a
+        cancel-everything outcome through its own review.
+        """
+        self.last_trace = []
+        current = self._coerce_events(events)
+        filt = parse_cancel_filter(problem, request, self._traced(self._chat, "cancel_filter", self._chat_usage))
+        if not filt.is_selective:
+            raise AgentError("Please say which sessions to cancel (team, day or date).")
+        cancelled = sorted(
+            (e for e in current if filt.matches(e, problem.timezone)),
+            key=lambda e: (e.starts_at, e.team_id, e.field_id, e.title),
+        )
+        keep_ids = {id(e) for e in cancelled}
+        kept = [e for e in current if id(e) not in keep_ids]
+        self.last_trace.append({"step": "cancel", "cancelled": len(cancelled), "kept": len(kept)})
+        if not cancelled:
+            raise AgentError(
+                "No sessions matched that description; nothing was cancelled. "
+                "Please say which team, day or date to cancel."
+            )
+        team_name = {t.id: t.name for t in problem.teams}
+        field_name = {f.id: f.name for f in problem.fields}
+        lines = [f"Cancelled {len(cancelled)} session(s):"]
+        for ev in cancelled:
+            label = f"{team_name.get(ev.team_id, ev.team_id)} {ev.event_type}"
+            if ev.title:
+                label += f" '{ev.title}'"
+            lines.append(
+                f"- {label} {ev.starts_at.isoformat()}->{ev.ends_at.isoformat()} "
+                f"at {field_name.get(ev.field_id, ev.field_id)}"
+            )
+        lines.append(f"Kept {len(kept)} session(s) unchanged.")
+        rules = Rules(
+            requirements=[],
+            min_gap_days=0,
+            notes=[f"Cancel filter matched {len(cancelled)} of {len(current)} sessions.", *filt.notes],
+        )
+        results = run_checks(problem, rules, kept)
+        self.last_trace.append(
+            {"step": "checks", "round": 0, "results": len(results), "failed": sum(1 for c in results if not c.passed)}
+        )
+        proposal = Proposal(rules=rules, events=kept, check_results=results, shortfalls=[])
+        proposal.summary = "\n".join(lines) + "\n" + self._explain(problem, proposal)
+        return proposal
 
     @staticmethod
     def _coerce_date(value: date | datetime | str | None, name: str) -> date | None:

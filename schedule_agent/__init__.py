@@ -1,6 +1,7 @@
 """SquadRoot Schedule Agent core library (no I/O, no web framework)."""
 
 from .agent import ScheduleAgent
+from .cancel import CancelFilter, parse_cancel_filter
 from .disruption import Disruption, parse_disruption
 from .errors import AgentError, ModelError
 from .explain import explain_proposal
@@ -24,7 +25,7 @@ from .understand import understand_request
 from .vision import GameImport, ScheduleImport, extract_games, games_to_busy
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 __all__ = [
     "__version__",
@@ -44,6 +45,8 @@ __all__ = [
     "ApplyResult",
     "Disruption",
     "parse_disruption",
+    "CancelFilter",
+    "parse_cancel_filter",
     "ScheduleAgent",
     "ModelConfig",
     "ChatFn",
