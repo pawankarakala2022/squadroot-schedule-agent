@@ -20,8 +20,10 @@ from .models import (
     Team,
 )
 from .understand import understand_request
+from .vision import GameImport, ScheduleImport, extract_games, games_to_busy
+from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "2.1.0"
+__version__ = "3.0.0"
 
 __all__ = [
     "__version__",
@@ -47,4 +49,10 @@ __all__ = [
     "chat_fn",
     "understand_request",
     "explain_proposal",
+    "VoiceConfig",
+    "transcribe_audio",
+    "GameImport",
+    "ScheduleImport",
+    "extract_games",
+    "games_to_busy",
 ]

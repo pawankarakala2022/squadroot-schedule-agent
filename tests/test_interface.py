@@ -19,7 +19,10 @@ from schedule_agent import (
     ProposedEvent,
     Rules,
     ScheduleAgent,
+    ScheduleImport,
     Team,
+    extract_games,
+    games_to_busy,
 )
 
 TZ = "America/Toronto"
@@ -241,6 +244,53 @@ def test_reschedule_next_week_with_host_pins() -> None:
     (south,) = pinned.events
     assert (south.starts_at, south.field_id) == (datetime(2026, 9, 14, 17, 0, tzinfo=tz), "f2")
     assert all(c.passed for c in pinned.check_results)
+
+
+def test_vision_games_become_busy_for_plan() -> None:
+    vision_json = json.dumps(
+        {
+            "games": [
+                {"date": "2026-09-14", "start": "17:00", "home": "U12", "away": "U14", "field": "North"},
+                {"date": "2026-09-14", "start": "18:00", "home": "U12 Cubs", "away": "U14", "field": "North"},
+            ],
+            "notes": [],
+        }
+    )
+
+    def multimodal(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            if response_format["json_schema"]["name"] == "league_games":
+                return vision_json
+            return RULES_JSON
+        return "Scheduled around the league games."
+
+    agent = ScheduleAgent(multimodal)
+    problem = Problem(
+        teams=[Team(id="t1", name="U12"), Team(id="t2", name="U14")],
+        fields=[Field(id="f1", name="North", open_from=time(17, 0), open_until=time(20, 0))],
+        season_start=date(2026, 9, 7),
+        season_end=date(2026, 9, 20),
+        timezone=TZ,
+    )
+    schedule = extract_games(problem, b"fake-png-bytes", multimodal)
+    assert len(schedule.games) == 2
+    assert schedule.games[0].matched is True
+    assert schedule.games[1].matched is False  # unknown team reported, never guessed
+    assert ScheduleImport.from_dict(json.loads(json.dumps(schedule.to_dict()))) == schedule
+    game_busy = next(b for b in games_to_busy(schedule, problem) if b.resource == "team:t1")
+    with_games = Problem(
+        teams=problem.teams,
+        fields=problem.fields,
+        season_start=problem.season_start,
+        season_end=problem.season_end,
+        timezone=problem.timezone,
+        busy=games_to_busy(schedule, problem),
+    )
+    proposal = agent.plan(with_games, "U12 practice once a week on Mondays after 5pm", verify=lambda draft: [])
+    assert len(proposal.events) == 2
+    for event in proposal.events:
+        assert not (event.team_id == "t1" and event.starts_at < game_busy.end and game_busy.start < event.ends_at)
+    assert all(c.passed for c in proposal.check_results)
 
 
 def test_plan_accepts_previous_rules_and_dict() -> None:

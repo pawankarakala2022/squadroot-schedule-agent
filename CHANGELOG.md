@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0.0 (2026-10-26)
+
+Breaking (new public names; no existing shape changed): Phase 5
+multimodal input. `VoiceConfig` + `transcribe_audio(config, audio_bytes)`
+send a voice note to the Meta transcription model and return request
+text for the same agent loop. `GameImport` / `ScheduleImport` +
+`extract_games(problem, image_bytes, chat)` read league games from a
+schedule photo (strict json_schema, exact name matching, unmatched rows
+kept and reported, never guessed) and `games_to_busy(...)` turns matched
+games into Busy intervals so practices fit around them. Demo fixtures in
+`demo/` (all fictional).
+
 ## v2.1.0 (2026-10-26)
 
 Additive, backward compatible (old Disruption dicts still parse,
