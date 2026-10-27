@@ -32,13 +32,17 @@ class Disruption:
 
     An empty ``field_ids`` means every field is closed. ``search_days``
     is how many days after ``date_to`` the solver may search for free
-    slots. ``notes`` records things the model could not map.
+    slots. ``not_before`` (from "move to next week" and similar timing
+    words; None when the request says nothing about timing) is the
+    earliest date a moved session may land on. ``notes`` records things
+    the model could not map.
     """
 
     date_from: date
     date_to: date
     field_ids: list[str] = field(default_factory=list)
     search_days: int = DEFAULT_SEARCH_DAYS
+    not_before: date | None = None
     notes: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -48,6 +52,11 @@ class Disruption:
             self.date_to = self.date_to.date()
         if not isinstance(self.date_from, date) or not isinstance(self.date_to, date):
             raise TypeError("Disruption dates must be datetime.date")
+        if self.not_before is not None:
+            if isinstance(self.not_before, datetime):
+                self.not_before = self.not_before.date()
+            if not isinstance(self.not_before, date):
+                raise TypeError("Disruption not_before must be datetime.date or None")
         if self.date_to < self.date_from:
             raise ValueError("Disruption date_to must not be before date_from")
         if not isinstance(self.search_days, int) or isinstance(self.search_days, bool):
@@ -71,17 +80,20 @@ class Disruption:
             "date_to": self.date_to.isoformat(),
             "field_ids": list(self.field_ids),
             "search_days": self.search_days,
+            "not_before": self.not_before.isoformat() if self.not_before else None,
             "notes": list(self.notes),
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> Disruption:
-        """Build a Disruption from :meth:`to_dict` output."""
+        """Build a Disruption from :meth:`to_dict` output (old dicts: not_before None)."""
+        raw_before = d.get("not_before")
         return cls(
             date_from=date.fromisoformat(str(d["date_from"])),
             date_to=date.fromisoformat(str(d["date_to"])),
             field_ids=[str(x) for x in d.get("field_ids", [])],
             search_days=int(d.get("search_days", DEFAULT_SEARCH_DAYS)),
+            not_before=date.fromisoformat(str(raw_before)) if raw_before else None,
             notes=[str(x) for x in d.get("notes", [])],
         )
 
@@ -106,6 +118,7 @@ def _schema() -> dict:
                     "closed_field_aliases": {"type": "array", "items": {"type": "string"}},
                     "all_fields": {"type": "boolean"},
                     "search_days": {"type": "integer"},
+                    "not_before": {"type": "string"},
                     "notes": {"type": "array", "items": {"type": "string"}},
                 },
                 "required": [
@@ -114,6 +127,7 @@ def _schema() -> dict:
                     "closed_field_aliases",
                     "all_fields",
                     "search_days",
+                    "not_before",
                     "notes",
                 ],
                 "additionalProperties": False,
@@ -128,6 +142,8 @@ def _prompt(problem: Problem, field_names: dict[str, str], request: str, languag
         "Fields (alias: name): " + ", ".join(f"{a}: {field_names[a]}" for a in sorted(field_names)) + ".",
         f"Season: {problem.season_start.isoformat()} to {problem.season_end.isoformat()} ({problem.timezone}).",
         "Report dates as YYYY-MM-DD. date_to may equal date_from for a single day.",
+        "If the request says when moved sessions may go ('next week', 'this weekend',",
+        "'not before Monday'), set not_before to that date; empty string when it says nothing about timing.",
         "An empty closed-field list means every field is closed; all_fields=true says the same.",
         f"search_days is how many days after date_to to search for free slots ({MIN_SEARCH_DAYS}..{MAX_SEARCH_DAYS}).",
         f"Request language: {language}; write notes in that language.",
@@ -220,6 +236,13 @@ def _clean(data: object, fields: dict[str, str]) -> tuple[Disruption | None, lis
         notes.append(f"search_days clamped to {MIN_SEARCH_DAYS}..{MAX_SEARCH_DAYS}.")
     search_days = max(MIN_SEARCH_DAYS, min(MAX_SEARCH_DAYS, search_days))
 
+    raw_before = data.get("not_before", "")
+    not_before: date | None = None
+    if raw_before not in (None, ""):
+        not_before = _as_date(raw_before)
+        if not_before is None:
+            notes.append(f"Bad not_before {raw_before!r} ignored.")
+
     model_notes = data.get("notes", [])
     if isinstance(model_notes, list):
         notes.extend(str(n) for n in model_notes)
@@ -229,6 +252,7 @@ def _clean(data: object, fields: dict[str, str]) -> tuple[Disruption | None, lis
             date_to=date_to,
             field_ids=[] if all_fields else field_ids,
             search_days=search_days,
+            not_before=not_before,
             notes=notes,
         ),
         issues,

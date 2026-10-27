@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "squadroot-schedule-agent"
-version = "2.0.0"
+version = "2.1.0"
 description = "Club operations scheduling agent for volunteer-run community sports clubs."
 readme = "README.md"
 license = { text = "MIT" }

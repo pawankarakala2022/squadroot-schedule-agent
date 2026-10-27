@@ -190,6 +190,59 @@ def test_reschedule_moves_only_hit_sessions() -> None:
     }
 
 
+def test_reschedule_next_week_with_host_pins() -> None:
+    next_week_json = json.dumps(
+        {
+            "date_from": "2026-09-10",
+            "date_to": "2026-09-10",
+            "closed_field_aliases": ["F1"],
+            "all_fields": False,
+            "search_days": 7,
+            "not_before": "2026-09-14",
+            "notes": [],
+        }
+    )
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            return next_week_json
+        return "Moved to next week."
+
+    tz = ZoneInfo(TZ)
+    problem = Problem(
+        teams=[Team(id="t1", name="U12")],
+        fields=[
+            Field(id="f1", name="North", open_from=time(17, 0), open_until=time(20, 0)),
+            Field(id="f2", name="South", open_from=time(17, 0), open_until=time(20, 0)),
+        ],
+        season_start=date(2026, 9, 7),
+        season_end=date(2026, 9, 20),
+        timezone=TZ,
+    )
+    thu = datetime(2026, 9, 10, 17, 0, tzinfo=tz)
+    events = [
+        ProposedEvent(
+            team_id="t1",
+            field_id="f1",
+            event_type="practice",
+            title="Thu",
+            starts_at=thu,
+            ends_at=datetime(2026, 9, 10, 18, 0, tzinfo=tz),
+        ),
+    ]
+    agent = ScheduleAgent(chat)
+    proposal = agent.reschedule(problem, events, "rain Thursday, move to next week")
+    (moved,) = proposal.events
+    assert moved.starts_at == datetime(2026, 9, 14, 17, 0, tzinfo=tz)  # Monday, back on North
+    assert moved.field_id == "f1"
+    pinned = agent.reschedule(
+        problem, events, "rain Thursday", not_before=date(2026, 9, 14), allowed_fields=["f2"]
+    )
+    (south,) = pinned.events
+    assert (south.starts_at, south.field_id) == (datetime(2026, 9, 14, 17, 0, tzinfo=tz), "f2")
+    assert all(c.passed for c in pinned.check_results)
+
+
 def test_plan_accepts_previous_rules_and_dict() -> None:
     agent = ScheduleAgent(fake_chat)
     problem = _problem()

@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.1.0 (2026-10-26)
+
+Additive, backward compatible (old Disruption dicts still parse,
+existing calls unchanged): move date/ground options for rescheduling.
+`Disruption.not_before` (model parses "move to next week" and similar
+timing words; empty means unset) pushes the solver search window later.
+`ScheduleAgent.reschedule()` gains host pins `not_before=` (a date or
+YYYY-MM-DD string; latest of model/host wins) and `allowed_fields=`
+(unknown ids dropped and reported; empty means any open ground). Pins
+are reported in the proposal notes; an inverted window yields named
+shortfalls instead of an error. Coach stays a time dimension: moved
+times must fit coach availability via Problem.busy and the verify hook.
+
 ## v2.0.0 (2026-10-26)
 
 Breaking (new public names; no existing shape changed): Phase 4b rain-out

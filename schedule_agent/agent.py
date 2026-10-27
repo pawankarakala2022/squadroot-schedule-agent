@@ -17,7 +17,7 @@ from __future__ import annotations
 import inspect
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -241,34 +241,101 @@ class ScheduleAgent:
         request: str,
         *,
         verify: VerifyHook | None = None,
+        not_before: date | str | None = None,
+        allowed_fields: list[str] | None = None,
     ) -> Proposal:
         """Move only the sessions hit by a disruption (rain, closed fields).
 
-        The model turns ``request`` into dates + closed fields; code finds
-        the events hit, freezes every other event as busy, blocks whole
-        days on the closed fields only, and re-places only the hit
-        sessions with the existing solver inside the search window. Each
-        move keeps its duration, type and title. The summary lists every
-        move as old time/field -> new time/field; shortfalls name the
-        sessions that could not be moved. Coach busy times
+        The model turns ``request`` into dates + closed fields (plus a
+        not-before date when the request says "next week" or similar);
+        code finds the events hit, freezes every other event as busy,
+        blocks whole days on the closed fields only, and re-places only
+        the hit sessions with the existing solver inside the search
+        window. Each move keeps its duration, type and title. The summary
+        lists every move as old time/field -> new time/field; shortfalls
+        name the sessions that could not be moved. Coach busy times
         (``Problem.busy`` and ``verify``) apply as in :meth:`plan`.
         Re-placement uses ``min_gap_days=0``: kept sessions stay exactly
         where they are and moves just need a free slot.
+
+        Host pins (for "move date/ground" options in the host UI):
+        ``not_before`` (a date or YYYY-MM-DD string) moves the search
+        window start later; the latest of the model's and the host's date
+        wins, so a move is never earlier than either asked. Pinned grounds
+        restrict placement to ``allowed_fields`` (unknown ids are dropped
+        and reported in the proposal notes); None (or empty) means any
+        open ground. Times are always solver-picked inside coach
+        availability; there is no coach entity to pin.
         """
         self.last_trace = []
         current = self._coerce_events(events)
         disruption = parse_disruption(problem, request, self._traced(self._chat, "disruption", self._chat_usage))
         closed = disruption.closed_ids(problem)
+        host_before = self._coerce_date(not_before, "not_before")
+        pin_fields, dropped_fields = self._coerce_allowed_fields(problem, allowed_fields)
+        pin_notes: list[str] = []
+        if allowed_fields is not None:
+            if not allowed_fields:
+                pin_notes.append("No grounds pinned; any open ground may be used.")
+                pin_fields = None
+            else:
+                if dropped_fields:
+                    pin_notes.append(f"Unknown grounds {sorted(dropped_fields)} dropped.")
+                if not pin_fields:
+                    pin_notes.append("No known grounds pinned; any open ground may be used.")
+                    pin_fields = None
+        starts = [disruption.date_from]
+        if disruption.not_before is not None:
+            starts.append(disruption.not_before)
+        if host_before is not None:
+            starts.append(host_before)
+        window_start = max(starts)
         self.last_trace.append(
             {
                 "step": "disruption",
                 "from": disruption.date_from.isoformat(),
                 "to": disruption.date_to.isoformat(),
                 "closed_fields": len(closed),
+                "not_before": (disruption.not_before.isoformat() if disruption.not_before else None),
+                "window_start": window_start.isoformat(),
+                "pinned_fields": len(pin_fields) if pin_fields is not None else None,
                 "notes": len(disruption.notes),
             }
         )
-        return self._finish_reschedule(problem, current, disruption, closed, verify)
+        return self._finish_reschedule(
+            problem, current, disruption, closed, verify, window_start, pin_fields, pin_notes
+        )
+
+    @staticmethod
+    def _coerce_date(value: date | datetime | str | None, name: str) -> date | None:
+        """Host date pin: date, datetime or YYYY-MM-DD string (loud programmer errors)."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                return date.fromisoformat(value.strip())
+            except ValueError:
+                raise ValueError(f"{name} must be a date or YYYY-MM-DD string, got {value!r}.") from None
+        raise TypeError(f"{name} must be a date, datetime or YYYY-MM-DD string, got {type(value).__name__}.")
+
+    @staticmethod
+    def _coerce_allowed_fields(
+        problem: Problem, allowed_fields: list[str] | None
+    ) -> tuple[list[str] | None, list[str]]:
+        """Host ground pin: known ids (problem order) plus dropped unknowns."""
+        if allowed_fields is None:
+            return None, []
+        if not isinstance(allowed_fields, list):
+            raise TypeError(f"allowed_fields must be a list of field ids, got {type(allowed_fields).__name__}.")
+        for fid in allowed_fields:
+            if not isinstance(fid, str):
+                raise TypeError(f"allowed_fields must be a list of field ids, got {fid!r}.")
+        known = [f.id for f in problem.fields]
+        return [fid for fid in known if fid in allowed_fields], [fid for fid in allowed_fields if fid not in known]
 
     @staticmethod
     def _coerce_events(events: object) -> list[ProposedEvent]:
@@ -295,6 +362,9 @@ class ScheduleAgent:
         disruption: Disruption,
         closed: set[str],
         verify: VerifyHook | None,
+        window_start: date,
+        pin_fields: list[str] | None,
+        pin_notes: list[str],
     ) -> Proposal:
         """Freeze kept events, re-place hit sessions, verify (max 3 rounds), explain."""
         tz = ZoneInfo(problem.timezone)
@@ -317,7 +387,9 @@ class ScheduleAgent:
         rounds = 0
         while True:
             working = _rebuild(problem, list(problem.busy) + frozen + extra)
-            moves, shortfalls, rules = self._place_moves(problem, working, disruption, hit, rounds)
+            moves, shortfalls, rules = self._place_moves(
+                problem, working, disruption, hit, rounds, window_start, pin_fields, pin_notes
+            )
             ordered = sorted(kept + [new for _, new in moves], key=lambda e: (e.starts_at, e.team_id, e.field_id))
             # Final checks run against the real calendar (kept events would
             # trivially "collide" with the freeze-busy used for solving).
@@ -352,13 +424,17 @@ class ScheduleAgent:
         disruption: Disruption,
         hit: list[ProposedEvent],
         outer_round: int,
+        window_start: date,
+        pin_fields: list[str] | None,
+        pin_notes: list[str],
     ) -> tuple[list[tuple[ProposedEvent, ProposedEvent]], list[Shortfall], Rules]:
         """Re-place each hit session with its own solver run; keep the earliest slot.
 
         One requirement per hit session (sessions_per_week=1) with the
         session's own duration, type and title. A multi-week search window
         can yield one slot per week; only the earliest is kept, so each
-        session moves exactly once.
+        session moves exactly once. ``window_start`` ("move to next week")
+        pushes the search later; ``pin_fields`` restricts the grounds.
         """
         tz = ZoneInfo(problem.timezone)
         window_end = disruption.date_to + timedelta(days=disruption.search_days)
@@ -367,6 +443,24 @@ class ScheduleAgent:
         moves: list[tuple[ProposedEvent, ProposedEvent]] = []
         shortfalls: list[Shortfall] = []
         requirements: list[Requirement] = []
+
+        def _unmovable(old: ProposedEvent, why: str) -> None:
+            monday = old.starts_at.astimezone(tz).date() - timedelta(days=old.starts_at.astimezone(tz).weekday())
+            shortfalls.append(
+                Shortfall(
+                    team_id=old.team_id,
+                    event_type=old.event_type,
+                    week_start=monday,
+                    requested=1,
+                    placed=0,
+                    reason=(
+                        f"Could not move '{old.title}' "
+                        f"({old.starts_at.isoformat()} at {field_name.get(old.field_id, old.field_id)}): {why}"
+                    ),
+                )
+            )
+
+        searchable = window_start <= window_end
         for i, old in enumerate(hit):
             minutes = int((old.ends_at - old.starts_at).total_seconds() // 60)
             req = Requirement(
@@ -374,13 +468,24 @@ class ScheduleAgent:
                 event_type=old.event_type,
                 sessions_per_week=1,
                 duration_minutes=max(1, minutes),
+                allowed_fields=list(pin_fields) if pin_fields is not None else [],
                 title=old.title,
             )
             requirements.append(req)
+            if not searchable:
+                _unmovable(
+                    old,
+                    f"earliest move date {window_start.isoformat()} is after the search window end "
+                    f"{window_end.isoformat()}.",
+                )
+                self.last_trace.append(
+                    {"step": "solve", "round": outer_round, "session": i, "events": 0, "shortfalls": 1}
+                )
+                continue
             sub = Problem(
                 teams=problem.teams,
                 fields=problem.fields,
-                season_start=disruption.date_from,
+                season_start=window_start,
                 season_end=window_end,
                 timezone=problem.timezone,
                 busy=busy_now,
@@ -411,21 +516,7 @@ class ScheduleAgent:
                     )
                 )
             else:
-                monday = old.starts_at.astimezone(tz).date() - timedelta(days=old.starts_at.astimezone(tz).weekday())
-                shortfalls.append(
-                    Shortfall(
-                        team_id=old.team_id,
-                        event_type=old.event_type,
-                        week_start=monday,
-                        requested=1,
-                        placed=0,
-                        reason=(
-                            f"Could not move '{old.title}' "
-                            f"({old.starts_at.isoformat()} at {field_name.get(old.field_id, old.field_id)}): "
-                            "no free team/field slot inside the search window."
-                        ),
-                    )
-                )
+                _unmovable(old, "no free team/field slot inside the search window.")
         if disruption.field_ids:
             scope = "closed: " + ",".join(sorted(disruption.field_ids))
         else:
@@ -434,6 +525,12 @@ class ScheduleAgent:
             f"Disruption {disruption.date_from.isoformat()}..{disruption.date_to.isoformat()}; "
             f"{scope}; search {disruption.search_days}d."
         ]
+        if window_start > disruption.date_from:
+            notes.append(f"Moved sessions land on or after {window_start.isoformat()}.")
+        if pin_fields is not None:
+            names = ", ".join(field_name.get(fid, fid) for fid in pin_fields)
+            notes.append(f"Only these grounds may be used: {names}.")
+        notes.extend(pin_notes)
         notes.extend(disruption.notes)
         rules = Rules(requirements=requirements, min_gap_days=0, notes=notes)
         return moves, shortfalls, rules

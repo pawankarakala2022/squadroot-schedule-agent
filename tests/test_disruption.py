@@ -91,6 +91,30 @@ def test_parse_drops_unknown_fields_and_clamps() -> None:
     assert any("F9" in n for n in disruption.notes)
 
 
+def test_parse_not_before_mapped_empty_and_bad() -> None:
+    mapped = parse_disruption(_problem(), "rain, move to next week", _chat(_payload(not_before="2026-09-14")))
+    assert mapped.not_before == date(2026, 9, 14)
+    assert Disruption.from_dict(json.loads(json.dumps(mapped.to_dict()))) == mapped
+
+    unset = parse_disruption(_problem(), "rain Thursday", _chat(_payload(not_before="")))
+    assert unset.not_before is None
+
+    lenient = parse_disruption(_problem(), "rain Thursday", _chat(_payload(not_before="someday")))
+    assert lenient.not_before is None
+    assert any("not_before" in n for n in lenient.notes)
+
+
+def test_disruption_old_dict_without_not_before() -> None:
+    old = {
+        "date_from": "2026-09-10",
+        "date_to": "2026-09-10",
+        "field_ids": ["f1"],
+        "search_days": 7,
+        "notes": [],
+    }
+    assert Disruption.from_dict(old).not_before is None
+
+
 def test_parse_garbage_twice_raises_agent_error() -> None:
     def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
         return "not json"
@@ -190,6 +214,89 @@ def test_reschedule_verify_hook_busy_respected() -> None:
     assert moved.starts_at == datetime(2026, 9, 10, 19, 0, tzinfo=tz)  # Thu 19:00, South
     assert moved.field_id == "f2"
     assert all(c.passed for c in proposal.check_results)
+
+
+def test_reschedule_honors_not_before_next_week() -> None:
+    tz = ZoneInfo(TZ)
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            return _payload(not_before="2026-09-14")  # "move to next week"
+        return "Explained."
+
+    proposal = ScheduleAgent(chat).reschedule(_problem(), _calendar(), "rain Thursday, move to next week")
+    by_title = {e.title: e for e in proposal.events}
+    assert by_title["U12 Thu practice"].starts_at == datetime(2026, 9, 14, 17, 0, tzinfo=tz)
+    assert by_title["U12 Thu practice"].field_id == "f1"  # North usable again next week
+    assert by_title["U14 Thu practice"].starts_at == datetime(2026, 9, 14, 18, 0, tzinfo=tz)
+    assert not proposal.shortfalls
+    assert all(c.passed for c in proposal.check_results)
+    assert any("on or after 2026-09-14" in n for n in proposal.rules.notes)
+
+
+def test_reschedule_host_pins_date_and_grounds() -> None:
+    tz = ZoneInfo(TZ)
+    proposal = ScheduleAgent(_chat()).reschedule(
+        _problem(),
+        _calendar(),
+        "rain Thursday, North closed",
+        not_before="2026-09-14",
+        allowed_fields=["f2"],
+    )
+    by_title = {e.title: e for e in proposal.events}
+    assert by_title["U12 Thu practice"].starts_at == datetime(2026, 9, 14, 17, 0, tzinfo=tz)
+    assert by_title["U12 Thu practice"].field_id == "f2"
+    assert by_title["U14 Thu practice"].field_id == "f2"
+    assert all(c.passed for c in proposal.check_results)
+    assert any("Only these grounds" in n and "South" in n for n in proposal.rules.notes)
+
+
+def test_reschedule_latest_not_before_wins() -> None:
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            return _payload(not_before="2026-09-14")
+        return "Explained."
+
+    proposal = ScheduleAgent(chat).reschedule(
+        _problem(), _calendar(), "rain Thursday", not_before=date(2026, 9, 10)
+    )
+    by_title = {e.title: e for e in proposal.events}
+    assert by_title["U12 Thu practice"].starts_at.date() == date(2026, 9, 14)
+
+
+def test_reschedule_inverted_window_shortfalls_safely() -> None:
+    agent = ScheduleAgent(_chat())
+    before = {e.title: (e.starts_at, e.field_id) for e in _calendar()}
+    proposal = agent.reschedule(_problem(), _calendar(), "rain Thursday", not_before=date(2026, 10, 1))
+    assert len(proposal.events) == 3  # only the kept sessions survive
+    assert len(proposal.shortfalls) == 2
+    assert "U12 Thu practice" in proposal.shortfalls[0].reason
+    assert "U14 Thu practice" in proposal.shortfalls[1].reason
+    for ev in proposal.events:
+        assert (ev.starts_at, ev.field_id) == before[ev.title]
+    assert all(c.passed for c in proposal.check_results)
+    assert proposal.summary.startswith("No sessions needed moving.")
+
+
+def test_reschedule_unknown_pin_dropped_and_reported() -> None:
+    proposal = ScheduleAgent(_chat()).reschedule(
+        _problem(), _calendar(), "rain Thursday", allowed_fields=["f2", "f9"]
+    )
+    by_title = {e.title: e for e in proposal.events}
+    assert by_title["U12 Thu practice"].field_id == "f2"
+    assert any("f9" in n for n in proposal.rules.notes)
+
+
+def test_reschedule_bad_pins_raise_loudly() -> None:
+    agent = ScheduleAgent(_chat())
+    with pytest.raises(ValueError):
+        agent.reschedule(_problem(), _calendar(), "rain Thursday", not_before="tomorrow")
+    with pytest.raises(TypeError):
+        agent.reschedule(_problem(), _calendar(), "rain Thursday", not_before=42)
+    with pytest.raises(TypeError):
+        agent.reschedule(_problem(), _calendar(), "rain Thursday", allowed_fields="f2")  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        agent.reschedule(_problem(), _calendar(), "rain Thursday", allowed_fields=["f2", 42])  # type: ignore[list-item]
 
 
 def test_reschedule_is_deterministic() -> None:

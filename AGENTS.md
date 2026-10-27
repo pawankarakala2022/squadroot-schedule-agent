@@ -56,15 +56,17 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
      `"field:<id>"`, `Problem(teams, fields, season_start, season_end, timezone, busy=[], blackout_dates=[])`,
      `Rules`, `Requirement`, `ProposedEvent(team_id, field_id, event_type, title, starts_at, ends_at)`,
      `CheckResult`, `Shortfall`, `Proposal`, `ApplyResult`,
-     `Disruption(date_from, date_to, field_ids=[] meaning all, search_days=7, notes=[])`.
+     `Disruption(date_from, date_to, field_ids=[] meaning all, search_days=7,
+     not_before=None, notes=[])`.
    - Agent: `ScheduleAgent(chat, *, explain_chat=None)`,
      `agent.plan(problem, request, *, previous=None, verify=None) -> Proposal`,
      `agent.revise(problem, proposal, request, *, verify=None) -> Proposal`,
      `agent.approve(proposal) -> ApplyResult` (the only path to an approval;
      refuses drafts with failed checks; applies nothing — the host saves),
-     `agent.reschedule(problem, events, request, *, verify=None) -> Proposal`
-     (rain/closed fields: only hit sessions move, summary lists each move as
-     old time/field -> new time/field).
+     `agent.reschedule(problem, events, request, *, verify=None, not_before=None,
+     allowed_fields=None) -> Proposal` (rain/closed fields: only hit sessions
+     move, summary lists each move as old time/field -> new time/field; host
+     pins for move date/ground options, latest not_before wins).
    - Model: `ModelConfig.from_env() -> ModelConfig | None` (None when no key), `chat_fn(config, *, temperature=0.0)`.
    - Errors: `AgentError` (bad request / could not understand, safe to show the manager),
      `ModelError` (provider failure, safe to show as "assistant unavailable").
