@@ -29,7 +29,15 @@ verified entirely from this repo, with fictional demo data.
 
 ## Run it
 
-Coming soon (one command, with a mock mode that needs no API key).
+```powershell
+.venv\Scripts\python -m pip install -e ".[app]"  # once: library + demo web deps
+.venv\Scripts\python -m pytest        # offline tests (fake models stand in)
+.venv\Scripts\python -m app           # demo web app, then open http://127.0.0.1:8000
+```
+
+Mock mode needs no API key. For live models, copy `.env.example` to `.env`
+and fill in `MODEL_API_KEY` (Meta API), plus `OPEN_MODEL_API_BASE` /
+`OPEN_MODEL_API_KEY` for the open-weights switch.
 
 ## Checking a voice request end to end
 

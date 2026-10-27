@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Riverside Youth Club — Schedule Agent demo</title>
+<style>
+:root { --green: #157347; --red: #b02a37; --ink: #212529; --muted: #6c757d; --line: #dee2e6; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); }
+main { max-width: 44rem; margin: 0 auto; padding: 1rem; }
+h1 { font-size: 1.25rem; margin: 0.5rem 0; }
+h2 { font-size: 1.05rem; margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 0.75rem; }
+p, li { line-height: 1.45; }
+.row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0; }
+button, select, input[type=file] { min-height: 2.75rem; font-size: 1rem; }
+button { padding: 0.5rem 0.9rem; border-radius: 0.5rem; border: 1px solid var(--line); background: #f8f9fa; }
+button.primary { background: var(--green); color: #fff; border-color: var(--green); }
+button:disabled { opacity: 0.5; }
+textarea { width: 100%; min-height: 5rem; font-size: 1rem; padding: 0.5rem; border-radius: 0.5rem; border: 1px solid var(--line); }
+pre { white-space: pre-wrap; background: #f8f9fa; padding: 0.5rem; border-radius: 0.5rem; overflow-x: auto; }
+.chip { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 1rem; font-size: 0.85rem; margin: 0.1rem; }
+.ok { background: #d1e7dd; color: #0f5132; }
+.bad { background: #f8d7da; color: #842029; }
+.muted { color: var(--muted); font-size: 0.9rem; }
+#error { background: #f8d7da; color: #842029; padding: 0.5rem; border-radius: 0.5rem; }
+.day { margin: 0.5rem 0; padding: 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; }
+.notice { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem; margin: 0.5rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+td, th { border: 1px solid var(--line); padding: 0.25rem 0.4rem; text-align: left; }
+</style>
+</head>
+<body>
+<main>
+<h1 id="club">Schedule Agent demo</h1>
+<p class="muted" id="club-sub">Volunteer-run club scheduling: ask in words, check every proposal, approve before anything applies.</p>
+<div class="row">
+<label for="mode">Model:</label>
+<select id="mode">
+<option value="mock" selected>Mock (no key)</option>
+<option value="meta">Meta API (muse-spark)</option>
+<option value="open">Open weights (Muse Spark Open)</option>
+</select>
+<span class="muted" id="mode-note"></span>
+</div>
+
+<h2>1. Ask</h2>
+<textarea id="request" placeholder="e.g. Foxes practice twice a week after 5pm"></textarea>
+<div class="row">
+<button id="preset-plan" type="button">Plan preset</button>
+<button id="preset-rain" type="button">Rain request</button>
+<button id="preset-cancel" type="button">Cancel request</button>
+</div>
+<div class="row">
+<input type="file" id="voice-file" accept="audio/*">
+<button id="voice-btn" type="button">Transcribe voice note</button>
+</div>
+<div class="row">
+<input type="file" id="vision-file" accept="image/*">
+<button id="vision-btn" type="button">Read schedule photo</button>
+</div>
+<div id="games"></div>
+
+<h2>2. Run</h2>
+<div class="row">
+<button id="plan-btn" type="button" class="primary">Plan</button>
+<button id="revise-btn" type="button">Revise draft</button>
+<button id="reschedule-btn" type="button">Reschedule</button>
+<button id="cancel-btn" type="button">Cancel sessions</button>
+</div>
+<div class="row">
+<button id="rain-set-btn" type="button">Rain demo: set calendar</button>
+<button id="rain-day-btn" type="button">Rain demo: rain day</button>
+</div>
+<div id="error" hidden></div>
+
+<h2>3. Proposal</h2>
+<pre id="summary" class="muted">No proposal yet.</pre>
+<div class="row">
+<button id="approve-btn" type="button" class="primary">Approve</button>
+<button id="notices-btn" type="button">Draft family notices</button>
+</div>
+<div id="approval" class="muted"></div>
+<h2>Steps (trace)</h2>
+<pre id="trace" class="muted">—</pre>
+<h2>Week calendar</h2>
+<div id="calendar" class="muted">—</div>
+<h2>Checks</h2>
+<div id="checks" class="muted">—</div>
+<h2>Shortfalls</h2>
+<div id="shortfalls" class="muted">—</div>
+<h2>Family notices</h2>
+<div id="notices" class="muted">—</div>
+<h2>How edits work</h2>
+<p class="muted">Approve only records a human approval — the agent applies nothing; the host saves.
+To change the live calendar afterwards, ask again (revise, reschedule or cancel) and approve the new draft.</p>
+<script>
+"use strict";
+const S = { mode: "mock", proposal: null, events: [], extraBusy: [], games: null, club: null, approved: false };
+const $ = (id) => document.getElementById(id);
+
+function fail(msg) { const e = $("error"); e.hidden = false; e.textContent = msg; }
+function clearFail() { $("error").hidden = true; }
+function setModeNote() {
+  $("mode-note").textContent = S.mode === "mock"
+    ? "Scripted answers, clearly labelled. No key needed."
+    : "Live model calls. Needs keys in .env.";
+}
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({ mode: S.mode }, body)) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j && j.detail) || ("Request failed (" + r.status + ")"));
+  return j;
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function showProposal(p, trace) {
+  S.proposal = p; S.events = p.events || []; S.approved = false; $("approval").textContent = "";
+  $("summary").textContent = p.summary || "(no summary)";
+  $("summary").classList.remove("muted");
+  $("trace").textContent = (trace || []).map((s) => JSON.stringify(s)).join("\n") || "—";
+  renderCalendar(); renderChecks(p); renderShortfalls(p);
+}
+
+function renderCalendar() {
+  const box = $("calendar");
+  if (!S.events.length) { box.textContent = "—"; return; }
+  const byDay = {};
+  S.events.forEach((e) => { const d = e.starts_at.slice(0, 10); (byDay[d] = byDay[d] || []).push(e); });
+  box.innerHTML = Object.keys(byDay).sort().map((d) => {
+    const rows = byDay[d].map((e) =>
+      `<li>${esc(e.starts_at.slice(11, 16))}–${esc(e.ends_at.slice(11, 16))} ${esc(e.title || e.event_type)} (${teamName(e.team_id)}, ${fieldName(e.field_id)})</li>`).join("");
+    return `<div class="day"><strong>${esc(d)}</strong><ul>${rows}</ul></div>`;
+  }).join("");
+}
+function teamName(id) { const t = (S.club.teams || []).find((t) => t.id === id); return t ? t.name : id; }
+function fieldName(id) { const f = (S.club.fields || []).find((f) => f.id === id); return f ? f.name : id; }
+
+function renderChecks(p) {
+  const box = $("checks");
+  const total = p.check_results.length, passed = p.check_results.filter((c) => c.passed).length;
+  let html = `<p>${passed}/${total} checks passed.</p>`;
+  p.events.forEach((e, i) => {
+    const bad = p.check_results.filter((c) => c.event_index === i && !c.passed);
+    const chips = bad.length
+      ? bad.map((c) => `<span class="chip bad">${esc(c.check)}: ${esc(c.reason)}</span>`).join("")
+      : `<span class="chip ok">all ${p.check_results.filter((c) => c.event_index === i).length} checks passed</span>`;
+    html += `<p><strong>${esc(e.title || e.event_type)}</strong> ${esc(e.starts_at.slice(0, 16))}<br>${chips}</p>`;
+  });
+  box.innerHTML = html;
+}
+
+function renderShortfalls(p) {
+  const box = $("shortfalls");
+  box.innerHTML = p.shortfalls.length
+    ? "<ul>" + p.shortfalls.map((s) => `<li>${esc(s.team_id)} ${esc(s.event_type)}: ${esc(s.reason)}</li>`).join("") + "</ul>"
+    : "None — everything asked for was placed.";
+}
+async function run(kind) {
+  clearFail();
+  const request = $("request").value;
+  try {
+    let j;
+    if (kind === "plan") j = await post("/api/plan", { request, games: S.games, extra_busy: S.extraBusy });
+    if (kind === "revise") {
+      if (!S.proposal) throw new Error("Plan something first, then revise it.");
+      j = await post("/api/revise", { proposal: S.proposal, request, extra_busy: S.extraBusy });
+    }
+    if (kind === "reschedule") {
+      if (!S.events.length) throw new Error("There is no calendar yet — set one first.");
+      j = await post("/api/reschedule", { events: S.events, request, extra_busy: S.extraBusy });
+    }
+    if (kind === "cancel") {
+      if (!S.events.length) throw new Error("There is no calendar yet — set one first.");
+      j = await post("/api/cancel", { events: S.events, request });
+    }
+    showProposal(j.proposal, j.trace);
+  } catch (err) { fail(err.message); }
+}
+
+async function approve() {
+  clearFail();
+  try {
+    if (!S.proposal) throw new Error("Nothing to approve yet.");
+    const j = await post("/api/approve", { proposal: S.proposal });
+    S.approved = true;
+    $("approval").textContent = j.result.message + " (The demo applies nothing — a host would save now.)";
+  } catch (err) { fail(err.message); }
+}
+
+async function notices() {
+  clearFail();
+  try {
+    if (!S.approved) throw new Error("Approve the proposal first — notices draft from approved sessions.");
+    const j = await post("/api/notices", { events: S.events });
+    const box = $("notices");
+    box.innerHTML = j.notices.notices.map((n) =>
+      `<div class="notice"><strong>${esc(n.language)}</strong> ` +
+      (n.verified ? `<span class="chip ok">verified</span>` : `<span class="chip bad">missing: ${esc(n.missing.join(", "))}</span>`) +
+      `<p>${esc(n.text)}</p></div>`).join("") +
+      (j.notices.notes.length ? `<p class="muted">Notes: ${esc(j.notices.notes.join(" "))}</p>` : "");
+  } catch (err) { fail(err.message); }
+}
+
+async function transcribe() {
+  clearFail();
+  try {
+    const f = $("voice-file").files[0];
+    if (!f) throw new Error("Choose an audio file first.");
+    const fd = new FormData(); fd.append("mode", S.mode); fd.append("audio", f);
+    const r = await fetch("/api/voice", { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || "Transcription failed.");
+    $("request").value = j.transcript;
+    if (j.mock) fail("Mock mode: sample transcript loaded — press Plan to run it.");
+  } catch (err) { fail(err.message); }
+}
+
+async function readPhoto() {
+  clearFail();
+  try {
+    const f = $("vision-file").files[0];
+    if (!f) throw new Error("Choose a photo first.");
+    const fd = new FormData(); fd.append("mode", S.mode); fd.append("image", f);
+    const r = await fetch("/api/vision", { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || "Could not read the photo.");
+    S.games = j.schedule;
+    const rows = j.schedule.games.map((g) =>
+      `<tr><td>${esc(g.date || "?")}</td><td>${esc(g.start || "?")}</td><td>${esc(g.home)} v ${esc(g.away)}</td><td>${esc(g.field)}</td><td>${g.matched ? "yes" : esc(g.note || "no")}</td></tr>`).join("");
+    $("games").innerHTML = `<table><tr><th>Date</th><th>Start</th><th>Game</th><th>Field</th><th>Usable</th></tr>${rows}</table>` +
+      (j.mock ? `<p class="muted">${esc(j.note)}</p>` : "") +
+      `<div class="row"><button id="games-plan-btn" type="button">Plan around these games</button></div>`;
+    $("games-plan-btn").addEventListener("click", () => run("plan"));
+  } catch (err) { fail(err.message); }
+}
+
+async function init() {
+  const r = await fetch("/api/club");
+  S.club = await r.json();
+  $("club").textContent = S.club.club + " — Schedule Agent demo";
+  $("club-sub").textContent = `Teams ${S.club.teams.map((t) => t.name).join(", ")} · ` +
+    `Fields ${S.club.fields.map((f) => f.name).join(", ")} · ${S.club.season_start}…${S.club.season_end} (${S.club.timezone}). ` +
+    S.club.coach_note;
+  $("mode").addEventListener("change", (e) => { S.mode = e.target.value; setModeNote(); });
+  setModeNote();
+  $("preset-plan").addEventListener("click", () => { $("request").value = S.club.presets.plan_request; });
+  $("preset-rain").addEventListener("click", () => { $("request").value = S.club.presets.rain_request; });
+  $("preset-cancel").addEventListener("click", () => { $("request").value = S.club.presets.cancel_request; });
+  $("plan-btn").addEventListener("click", () => run("plan"));
+  $("revise-btn").addEventListener("click", () => run("revise"));
+  $("reschedule-btn").addEventListener("click", () => run("reschedule"));
+  $("cancel-btn").addEventListener("click", () => run("cancel"));
+  $("rain-set-btn").addEventListener("click", async () => { $("request").value = S.club.presets.plan_request; await run("plan"); });
+  $("rain-day-btn").addEventListener("click", async () => { $("request").value = S.club.presets.rain_request; await run("reschedule"); });
+  $("approve-btn").addEventListener("click", approve);
+  $("notices-btn").addEventListener("click", notices);
+  $("voice-btn").addEventListener("click", transcribe);
+  $("vision-btn").addEventListener("click", readPhoto);
+}
+init();
+</script>
+</main>
+</body>
+</html>
+</body>
+</html>

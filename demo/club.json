@@ -1,0 +1,27 @@
+{
+  "club": "Riverside Youth Club",
+  "note": "Fictional demo data: no real clubs, families or people.",
+  "timezone": "America/Toronto",
+  "season_start": "2026-11-02",
+  "season_end": "2026-11-29",
+  "teams": [
+    {"id": "t1", "name": "Foxes", "languages": ["es", "en"]},
+    {"id": "t2", "name": "Badgers", "languages": ["en", "vi"]}
+  ],
+  "fields": [
+    {"id": "f1", "name": "North Field", "open_from": "17:00", "open_until": "20:00"},
+    {"id": "f2", "name": "South Field", "open_from": "17:00", "open_until": "20:00"}
+  ],
+  "coach": {
+    "teams": ["t1", "t2"],
+    "note": "One coach trains both teams and is unavailable on Wednesday evenings.",
+    "unavailable_weekday": 2,
+    "unavailable_from": "17:00",
+    "unavailable_until": "20:00"
+  },
+  "presets": {
+    "plan_request": "Foxes practice twice a week, 60 minutes, Mondays and Wednesdays after 5pm. Badgers practice once a week, 60 minutes, Thursdays after 5pm.",
+    "rain_request": "Rain Thursday November 12, North Field is closed.",
+    "cancel_request": "Cancel all Thursday sessions."
+  }
+}
