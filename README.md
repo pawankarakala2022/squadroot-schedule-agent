@@ -31,6 +31,41 @@ verified entirely from this repo, with fictional demo data.
 
 Coming soon (one command, with a mock mode that needs no API key).
 
+## Checking a voice request end to end
+
+`manual_phase5_check.py` is the scratch manual check (untracked, repo root):
+
+```powershell
+.venv\Scripts\python manual_phase5_check.py                      # offline fakes
+.venv\Scripts\python manual_phase5_check.py --live               # real models
+.venv\Scripts\python manual_phase5_check.py --live --voice NOTE.wav  # your recording
+```
+
+Record with `record_voice_note.html` (16 kHz mono WAV, the only format the
+transcription endpoint accepted in our live tests; phone `.m4a` is rejected).
+Reading the output:
+
+- `live transcript:` is your voice transcribed. Proof: it changes with each
+  recording. The script prints it but feeds it nowhere: turning "add a game"
+  speech into a created event is not built yet. Unknown teams (e.g. Falcons)
+  are dropped and reported, and one-off games are not expressible in `Rules`,
+  which only describes recurring sessions — so today that transcript creates
+  nothing. An empty `REQUIREMENTS` list plus explanatory `notes` is the
+  expected, safe result.
+- `offline voice (empty audio)` is a deliberate self-test that feeds zero
+  bytes to prove empty input fails safely. It never touches your file.
+
+## Two model clients, how to tell them apart
+
+- Chat (`schedule_agent/llm.py`, `chat_fn` → `POST /chat/completions`):
+  used by understand, explain, and vision.
+- Voice (`schedule_agent/voice.py`, `VoiceConfig` → `POST /asr/transcribe`
+  with `request` + `audio` parts, `transcript` in the reply): used only by
+  `transcribe_audio`.
+
+Verify: pass `usage_out={}` — voice fills `muse-voice-transcribe-1.0`,
+chat fills `muse-spark-1.3`. Or break one key: the other path keeps working.
+
 ## License
 
 MIT. See `LICENSE`.
