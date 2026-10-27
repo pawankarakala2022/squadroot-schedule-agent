@@ -70,6 +70,7 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
    - Model: `ModelConfig.from_env() -> ModelConfig | None` (None when no key), `chat_fn(config, *, temperature=0.0)`.
    - Voice: `VoiceConfig.from_env() -> VoiceConfig | None`, `transcribe_audio(config, audio_bytes, *, filename=..., mime_type=None, language=None) -> str`.
    - Vision: `GameImport`, `ScheduleImport`, `extract_games(problem, image_bytes, chat, *, mime_type="image/png") -> ScheduleImport`, `games_to_busy(schedule, problem, *, duration_minutes=60) -> list[Busy]`.
+  - Notify: `FamilyNotice`, `FamilyNotices`, `draft_notices(problem, events, chat, *, languages=[...]) -> FamilyNotices` (one drafted notice per family language; every draft must echo each team name, date, time and field name exactly, one repair retry, gaps reported not silently sent).
    - Errors: `AgentError` (bad request / could not understand, safe to show the manager),
      `ModelError` (provider failure, safe to show as "assistant unavailable").
 3. **Ids are opaque strings owned by the host** (SquadRoot uses UUIDs). Never parse them. Aliases

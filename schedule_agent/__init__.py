@@ -19,11 +19,12 @@ from .models import (
     Shortfall,
     Team,
 )
+from .notify import FamilyNotice, FamilyNotices, draft_notices
 from .understand import understand_request
 from .vision import GameImport, ScheduleImport, extract_games, games_to_busy
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 
 __all__ = [
     "__version__",
@@ -49,6 +50,9 @@ __all__ = [
     "chat_fn",
     "understand_request",
     "explain_proposal",
+    "FamilyNotice",
+    "FamilyNotices",
+    "draft_notices",
     "VoiceConfig",
     "transcribe_audio",
     "GameImport",

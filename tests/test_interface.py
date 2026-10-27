@@ -13,6 +13,7 @@ from schedule_agent import (
     ApplyResult,
     Busy,
     Disruption,
+    FamilyNotices,
     Field,
     Problem,
     Proposal,
@@ -21,6 +22,7 @@ from schedule_agent import (
     ScheduleAgent,
     ScheduleImport,
     Team,
+    draft_notices,
     extract_games,
     games_to_busy,
 )
@@ -291,6 +293,30 @@ def test_vision_games_become_busy_for_plan() -> None:
     for event in proposal.events:
         assert not (event.team_id == "t1" and event.starts_at < game_busy.end and game_busy.start < event.ends_at)
     assert all(c.passed for c in proposal.check_results)
+
+
+def test_approved_change_drafts_verified_family_notices() -> None:
+    agent = ScheduleAgent(fake_chat)
+    proposal = agent.plan(_problem(), "U12 practice Mondays", verify=_verify)
+    approved = agent.approve(proposal)
+    assert approved.approved is True
+
+    def notices_chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        facts = messages[-1]["content"]
+        payload = {
+            "notices": [
+                {"language": "es", "text": "Hola familias: " + facts},
+                {"language": "en", "text": "Hi families: " + facts},
+            ],
+            "notes": [],
+        }
+        return json.dumps(payload)
+
+    bundle = draft_notices(_problem(), approved.events, notices_chat, languages=["es", "en"])
+    assert isinstance(bundle, FamilyNotices)
+    assert bundle.all_verified  # echoing the facts block echoes every exact token
+    assert [n.language for n in bundle.notices] == ["es", "en"]
+    assert FamilyNotices.from_dict(json.loads(json.dumps(bundle.to_dict()))) == bundle
 
 
 def test_plan_accepts_previous_rules_and_dict() -> None:

@@ -1,0 +1,7 @@
+{
+  "note": "Fictional demo data: no real clubs, families or people. Languages per team for Phase 6 family notices.",
+  "teams": [
+    {"name": "Foxes", "languages": ["es", "en"]},
+    {"name": "Badgers", "languages": ["en", "vi"]}
+  ]
+}

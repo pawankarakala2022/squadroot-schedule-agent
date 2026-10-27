@@ -1,5 +1,20 @@
 # Changelog
 
+## v3.1.0 (2026-10-27)
+
+Additive, backward compatible: Phase 6 family notices.
+`FamilyNotice` / `FamilyNotices` (one draft per requested language with
+a per-draft verified flag and missing-fact list, JSON round-trip) plus
+`draft_notices(problem, events, chat, *, languages=[...])`: the model
+words one short notice per language from the approved sessions, then
+code verifies every draft echoes each team name, date (YYYY-MM-DD),
+start/end time (HH:MM) and field name exactly, even in non-Latin
+scripts. One repair retry listing the missing facts, then anything
+still missing is reported in notes for the human, never silently sent.
+Empty language tags, duplicates and unknown model rows are dropped and
+reported; at most 10 languages per call. No existing name or shape
+changed.
+
 ## v3.0.0 (2026-10-26)
 
 Breaking (new public names; no existing shape changed): Phase 5

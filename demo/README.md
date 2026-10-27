@@ -13,3 +13,5 @@
   (rejected formats), `schedule_tiny.png`: tiny format fixtures for the
   offline test suite. The wavs are sine tones, not speech: they exercise
   upload validation, never transcription quality.
+- `family_languages.json`: languages per team (Foxes: es/en, Badgers:
+  en/vi) for Phase 6 family notices. Names only, no people.

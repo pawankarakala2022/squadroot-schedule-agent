@@ -1,4 +1,5 @@
 # Build log
+- 2026-10-27: Phase 6 built: schedule_agent/notify.py (draft_notices with exact-fact verification, one repair retry, gaps reported never silent) plus tests/test_notify.py, contract test, demo/family_languages.json; v3.1.0 + CHANGELOG + AGENTS.md names; 115 pytest tests green. (Muse Code)
 
 One line per piece of work: date (ET), what was built, who / what wrote it.
 
