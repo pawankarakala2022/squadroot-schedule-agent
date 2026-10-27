@@ -47,6 +47,23 @@ Smoke test the real API once with a tiny request and note token usage in BUILD_L
 > revise(proposal, "move U12 to Field 2") keeps everything else. approve(proposal) is the only way to
 > produce an ApplyResult. Nothing is applied before approval.
 
+## Phase 4b - Rain-outs and closed fields (Thu Oct 29, morning)
+
+The calendar is already set and it rains Thursday: move only the hit sessions to free slots on the
+fields that are still open, keep everything else where it is.
+
+> Add `agent.reschedule(problem, events, request, *, verify=None) -> Proposal` for disruptions (rain,
+> field closed). The model turns the request ("rain Thursday, North and South closed") into a
+> `Disruption(date_from, date_to, field_ids or all, search_days=7)` with a strict json_schema; unknown
+> fields are dropped and reported. Code then: finds the events hit; turns every other event into Busy
+> for its team and field; adds whole-day Busy on the closed fields only (other fields stay usable);
+> re-places only the hit sessions with the existing solver inside the search window, keeping each
+> event's duration, type and title. Shortfalls name the sessions that could not be moved. The Proposal
+> lists each move as old time/field -> new time/field. Coach busy times (Problem.busy and the verify
+> hook) apply as in plan(). Add it to the AGENTS.md library interface and tests/test_interface.py.
+> Tests: kept events never move, closed fields never used, open fields still used, nothing placed
+> inside the disruption, deterministic, verify hook busy respected. Fake chat, no network.
+
 ## Phase 5 - Multimodal input (Thu Oct 29 - Fri Oct 30)
 
 > Build `voice.py`: audio file -> text with muse-voice-transcribe-1.0, then into the same agent loop.
@@ -74,6 +91,9 @@ Smoke test the real API once with a tiny request and note token usage in BUILD_L
 > schedule, watch the agent's steps live (trace), see the week calendar, every check as a green /
 > red chip, shortfalls, the summary, family notice drafts, then Approve. Model switch: Meta API /
 > open weights / mock. Mock mode works with no key. Mobile friendly. `python -m app` starts it.
+> Demo club data (fictional) includes: one coach who coaches two teams plus a weekly unavailable
+> evening, sent as team Busy through a mock verify hook so the trace shows a re-solve round; a set
+> calendar for the rain-out demo with a "Rain day" button that runs reschedule().
 
 Deploy the demo somewhere public (e.g. Railway / Render / Fly) with a spend-limited key.
 
@@ -92,10 +112,11 @@ Deploy the demo somewhere public (e.g. Railway / Render / Fly) with a spend-limi
 - 0:20 Voice note in Spanish -> plan in seconds, checks all green.
 - 1:00 Photo of the league game schedule -> practices re-flow around games.
 - 1:30 A bad request / injection attempt -> checks catch it, agent explains.
-- 2:00 Family notices in 3 languages; Approve.
+- 2:00 Rain-out by voice: "rain Thursday, North closed" -> only those sessions move, coach busy
+  times respected; family notices in 3 languages; Approve.
 - 2:20 Same run on Muse Spark Open (open weights), eval table.
 - 2:45 Who it helps and what's next (inside SquadRoot as a hosted service).
 
 ## If time runs short, cut in this order
 
-Phase 6 (notices) -> vision PDF (keep photo) -> eval languages. Never cut: checks, approval step, mock mode, tests.
+Phase 6 (notices) -> vision PDF (keep photo) -> eval languages -> Phase 4b (rain-outs). Never cut: checks, approval step, mock mode, tests.
