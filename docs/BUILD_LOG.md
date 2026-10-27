@@ -17,3 +17,4 @@ One line per piece of work: date (ET), what was built, who / what wrote it.
 - 2026-10-26: Ignore voice recordings in .gitignore (*.m4a etc., biometric data must never be committed); judges record demo/voice_note.txt themselves. (Muse Code)
 - 2026-10-26: Test data fixtures under demo/ (voice_16k/8k/stereo wavs as tones for upload validation, schedule_tiny.png), wired into voice/vision tests; 103 pytest tests green. (Muse Code)
 - 2026-10-26: Voice m4a rejected by server (MP4/M4A/AAC enums + rate hint all "Malformed request"); shipped WAV-only note + record_voice_note.html (16 kHz mono WAV recorder) so --voice works. (Muse Code)
+- 2026-10-26: First real-speech transcription live: user's my_note.wav via record_voice_note.html returned text through transcribe_audio; full phase 5 manual check green incl. live. (Muse Code)
