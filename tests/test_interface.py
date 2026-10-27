@@ -10,6 +10,7 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from schedule_agent import (
+    ApplyResult,
     Busy,
     Field,
     Problem,
@@ -107,6 +108,17 @@ def test_revise_keeps_everything_else() -> None:
     assert isinstance(revised, Proposal)
     assert revised.events == proposal.events
     assert Proposal.from_dict(json.loads(json.dumps(revised.to_dict()))) == revised
+
+
+def test_approve_is_the_only_path_to_apply_result() -> None:
+    agent = ScheduleAgent(fake_chat)
+    proposal = agent.plan(_problem(), "U12 practice Mondays", verify=_verify)
+    result = agent.approve(proposal)
+    assert isinstance(result, ApplyResult)
+    assert result.approved is True
+    assert result.events == proposal.events
+    assert ApplyResult().approved is False  # default construction is not an approval
+    assert ApplyResult.from_dict(json.loads(json.dumps(result.to_dict()))) == result
 
 
 def test_plan_accepts_previous_rules_and_dict() -> None:

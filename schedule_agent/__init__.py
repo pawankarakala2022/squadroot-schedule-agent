@@ -5,6 +5,7 @@ from .errors import AgentError, ModelError
 from .explain import explain_proposal
 from .llm import ChatFn, ModelConfig, chat_fn
 from .models import (
+    ApplyResult,
     Busy,
     CheckResult,
     Field,
@@ -19,7 +20,7 @@ from .models import (
 )
 from .understand import understand_request
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "__version__",
@@ -36,6 +37,7 @@ __all__ = [
     "Shortfall",
     "Proposal",
     "Plan",
+    "ApplyResult",
     "ScheduleAgent",
     "ModelConfig",
     "ChatFn",

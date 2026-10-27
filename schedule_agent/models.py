@@ -483,3 +483,48 @@ class Proposal:
 
 # Alias kept for docs/PLAN.md wording ("a Plan with events and shortfalls").
 Plan = Proposal
+
+
+@dataclass
+class ApplyResult:
+    """Record of a human approval decision. The agent still applies nothing.
+
+    Only :meth:`schedule_agent.agent.ScheduleAgent.approve` produces an
+    approved instance (``approved=True``), and only for a draft whose
+    check results all passed. The host saves ``events`` through its own
+    permission and conflict checks; default-constructed instances are
+    *not* approvals (``approved=False``).
+    """
+
+    events: list[ProposedEvent] = field(default_factory=list)
+    approved: bool = False
+    checks_passed: int = 0
+    checks_total: int = 0
+    message: str = ""
+
+    def __post_init__(self) -> None:
+        self.events = list(self.events)
+        self.approved = bool(self.approved)
+        self.checks_passed = int(self.checks_passed)
+        self.checks_total = int(self.checks_total)
+
+    def to_dict(self) -> dict:
+        """Return a JSON-serialisable dict (ISO 8601 datetimes)."""
+        return {
+            "events": [e.to_dict() for e in self.events],
+            "approved": self.approved,
+            "checks_passed": self.checks_passed,
+            "checks_total": self.checks_total,
+            "message": self.message,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> ApplyResult:
+        """Build an ApplyResult from :meth:`to_dict` output."""
+        return cls(
+            events=[ProposedEvent.from_dict(x) for x in d.get("events", [])],
+            approved=bool(d.get("approved", False)),
+            checks_passed=int(d.get("checks_passed", 0)),
+            checks_total=int(d.get("checks_total", 0)),
+            message=str(d.get("message", "")),
+        )

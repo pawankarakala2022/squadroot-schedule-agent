@@ -23,7 +23,7 @@ from .checks import run_checks
 from .errors import AgentError
 from .explain import explain_proposal
 from .llm import ChatFn
-from .models import Busy, Problem, Proposal, ProposedEvent, Rules
+from .models import ApplyResult, Busy, Problem, Proposal, ProposedEvent, Rules
 from .solver import solve
 from .understand import understand_request
 
@@ -155,6 +155,46 @@ class ScheduleAgent:
         self.last_trace = []
         rules = self._understand(problem, request, proposal.rules)
         return self._finish(problem, rules, verify)
+
+    def approve(self, proposal: Proposal | dict[str, Any]) -> ApplyResult:
+        """Record a human's approval of a checked draft. The only path to an approval.
+
+        Refuses (raises :class:`AgentError`) drafts with no check results
+        or with any failed check: shortfalls are fine (they are reported
+        in the draft), but a double booking or hours violation must never
+        be approved. Performs no side effects: the host saves the
+        approved events through its own permission and conflict checks.
+        """
+        if isinstance(proposal, dict):
+            try:
+                proposal = Proposal.from_dict(proposal)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise AgentError("The saved draft could not be read; please start a new request.") from exc
+        if not isinstance(proposal, Proposal):
+            raise AgentError("The saved draft could not be read; please start a new request.")
+        if not proposal.check_results:
+            raise AgentError("This draft has no check results yet; please plan it again before approving.")
+        failed = [c for c in proposal.check_results if not c.passed]
+        if failed:
+            details = "; ".join(f"{c.check} on event #{c.event_index}: {c.reason}".strip() for c in failed[:3])
+            raise AgentError(
+                "This draft cannot be approved: "
+                + details
+                + (f" (+{len(failed) - 3} more failing checks)." if len(failed) > 3 else ".")
+                + " Please revise the request and plan again."
+            )
+        total = len(proposal.check_results)
+        self.last_trace.append({"step": "approve", "events": len(proposal.events), "approved": True, "checks": total})
+        return ApplyResult(
+            events=list(proposal.events),
+            approved=True,
+            checks_passed=total,
+            checks_total=total,
+            message=(
+                f"Approved {len(proposal.events)} sessions; all {total} checks passed. "
+                "The agent applies nothing: save these through your own permission and conflict checks."
+            ),
+        )
 
     def _traced(self, inner: ChatFn, name: str, forwards_usage: bool) -> ChatFn:
         """Wrap a chat function so each call appends a step to the trace."""

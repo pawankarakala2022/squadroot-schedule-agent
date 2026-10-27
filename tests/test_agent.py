@@ -6,10 +6,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from schedule_agent import Proposal, ScheduleAgent
+from schedule_agent import ApplyResult, CheckResult, Proposal, ScheduleAgent
 from schedule_agent.agent import MAX_VERIFY_ROUNDS
 from schedule_agent.errors import AgentError, ModelError
-from schedule_agent.models import Busy, Field, Problem, Team
+from schedule_agent.models import Busy, Field, Problem, Shortfall, Team
 
 TZ = "America/Toronto"
 
@@ -226,6 +226,58 @@ def test_constructor_rejects_non_callable() -> None:
         ScheduleAgent("chat")  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         ScheduleAgent(_chat(), explain_chat=42)  # type: ignore[arg-type]
+
+
+def test_approve_checked_draft_returns_apply_result() -> None:
+    agent = ScheduleAgent(_chat())
+    proposal = agent.plan(_problem(), "U12 Mondays")
+    before = proposal.to_dict()
+    result = agent.approve(proposal)
+    assert isinstance(result, ApplyResult)
+    assert result.approved is True
+    assert result.events == proposal.events
+    assert result.checks_passed == result.checks_total == len(proposal.check_results) > 0
+    assert ApplyResult.from_dict(json.loads(json.dumps(result.to_dict()))) == result
+    assert proposal.to_dict() == before  # approve changes nothing
+    assert agent.last_trace[-1]["step"] == "approve"
+
+
+def test_approve_refuses_failing_or_unchecked_drafts() -> None:
+    agent = ScheduleAgent(_chat())
+    proposal = agent.plan(_problem(), "U12 Mondays")
+    failing = Proposal(
+        rules=proposal.rules,
+        events=proposal.events,
+        check_results=proposal.check_results
+        + [CheckResult(check="busy", event_index=0, passed=False, reason="Team 't1' is busy at this time.")],
+        shortfalls=proposal.shortfalls,
+        summary=proposal.summary,
+    )
+    with pytest.raises(AgentError):
+        agent.approve(failing)
+    with pytest.raises(AgentError):
+        agent.approve(Proposal(rules=proposal.rules))  # no check results at all
+    with pytest.raises(AgentError):
+        agent.approve("nope")  # type: ignore[arg-type]
+    assert ApplyResult().approved is False  # default construction is not an approval
+
+
+def test_approve_accepts_dict_and_shortfalls_do_not_block() -> None:
+    agent = ScheduleAgent(_chat())
+    proposal = agent.plan(_problem(), "U12 Mondays")
+    proposal.shortfalls.append(
+        Shortfall(
+            team_id="t1",
+            event_type="practice",
+            week_start=date(2026, 9, 7),
+            requested=2,
+            placed=1,
+            reason="Only 1 of 2 placed.",
+        )
+    )
+    result = agent.approve(proposal.to_dict())
+    assert result.approved is True
+    assert result.events == proposal.events
 
 
 def test_plan_is_deterministic() -> None:
