@@ -156,7 +156,15 @@ class Busy:
 
 @dataclass
 class Requirement:
-    """One repeating need: e.g. U12 needs 2 x 60-min practices per week."""
+    """One need: recurring across the season, or one-off on dated days.
+
+    A requirement with no active window repeats every season week
+    (``sessions_per_week`` per week). Setting ``active_from`` /
+    ``active_until`` scopes it like an event planner: only dates inside
+    the inclusive window may be used. A one-off session such as "next
+    Tuesday" is ``sessions_per_week=1`` with both bounds set to that
+    date; "next week" bounds Monday to Sunday of that week.
+    """
 
     team_id: str
     event_type: str
@@ -167,6 +175,8 @@ class Requirement:
     earliest_start: time | None = None
     latest_end: time | None = None
     title: str | None = None
+    active_from: date | None = None
+    active_until: date | None = None
 
     def __post_init__(self) -> None:
         if not self.team_id or not isinstance(self.team_id, str):
@@ -192,6 +202,12 @@ class Requirement:
             raise ValueError("Requirement.earliest_start must be before latest_end")
         if self.title is not None and not isinstance(self.title, str):
             raise TypeError("Requirement.title must be a string or None")
+        if self.active_from is not None and not isinstance(self.active_from, date):
+            raise TypeError("Requirement.active_from must be a date or None")
+        if self.active_until is not None and not isinstance(self.active_until, date):
+            raise TypeError("Requirement.active_until must be a date or None")
+        if self.active_from is not None and self.active_until is not None and self.active_from > self.active_until:
+            raise ValueError("Requirement.active_from must not be after active_until")
         # Copy mutable inputs so callers cannot mutate us later.
         self.allowed_days = list(self.allowed_days)
         self.allowed_fields = [str(f) for f in self.allowed_fields]
@@ -208,6 +224,8 @@ class Requirement:
             "earliest_start": self.earliest_start.isoformat() if self.earliest_start else None,
             "latest_end": self.latest_end.isoformat() if self.latest_end else None,
             "title": self.title,
+            "active_from": self.active_from.isoformat() if self.active_from else None,
+            "active_until": self.active_until.isoformat() if self.active_until else None,
         }
 
     @classmethod
@@ -223,6 +241,8 @@ class Requirement:
             earliest_start=_parse_time(d.get("earliest_start")),
             latest_end=_parse_time(d.get("latest_end")),
             title=str(d["title"]) if d.get("title") is not None else None,
+            active_from=_parse_date(d["active_from"]) if d.get("active_from") else None,
+            active_until=_parse_date(d["active_until"]) if d.get("active_until") else None,
         )
 
 

@@ -47,6 +47,8 @@ def _good_req(**over):  # type: ignore[no-untyped-def]
         "earliest_start": "17:00",
         "latest_end": "20:00",
         "title": "",
+        "active_from": "",
+        "active_until": "",
     }
     req.update(over)
     return req
@@ -116,6 +118,45 @@ def test_garbage_twice_raises_agent_error() -> None:
     with pytest.raises(AgentError):
         understand_request(_problem(), "do something", chat)
     assert len(calls) == 2
+
+
+def test_active_window_parsed_and_prompt_has_today() -> None:
+    calls: list = []
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        calls.append((messages, response_format))
+        return _payload([_good_req(sessions_per_week=1, active_from="2026-11-03", active_until="2026-11-03")])
+
+    rules = understand_request(_problem(), "Badgers next Tuesday one session", chat)
+    (req,) = rules.requirements
+    assert req.active_from == date(2026, 11, 3)
+    assert req.active_until == date(2026, 11, 3)
+    assert req.sessions_per_week == 1
+    prompt_text = " ".join(m.get("content", "") for m in calls[0][0] if isinstance(m, dict))
+    assert "Today:" in prompt_text and "next Tuesday" in prompt_text
+
+
+def test_bad_active_window_dropped_and_reported() -> None:
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        return _payload([_good_req(active_from="not-a-date", active_until="2026-10-01", active_from2="x")])
+
+    rules = understand_request(_problem(), "one-off with bad dates", chat)
+    (req,) = rules.requirements
+    assert req.active_from is None
+    assert rules.notes, "bad dates must be reported"
+
+
+def test_old_payload_without_window_still_parses() -> None:
+    old = dict(_good_req())
+    old.pop("active_from")
+    old.pop("active_until")
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        return _payload([old])
+
+    rules = understand_request(_problem(), "recurring practice", chat)
+    assert rules.requirements[0].active_from is None
+    assert rules.requirements[0].active_until is None
 
 
 def test_empty_request_fails_without_calling_model() -> None:

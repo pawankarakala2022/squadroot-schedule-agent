@@ -227,6 +227,36 @@ def test_rules_blackout_dates_merge_with_problem() -> None:
     assert proposal.shortfalls[0].placed == 0
 
 
+def test_active_window_scopes_one_off_session() -> None:
+    """'Next Tuesday' must place one session on that date, not every Tuesday."""
+    problem = Problem(
+        teams=[Team(id="t1", name="U12")],
+        fields=[Field(id="f1", name="North", open_from=time(17, 0), open_until=time(20, 0))],
+        season_start=date(2026, 11, 2),  # Monday; Tuesdays: 3, 10, 17, 24
+        season_end=date(2026, 11, 29),
+        timezone=TZ,
+    )
+    rules = Rules(
+        requirements=[
+            Requirement(
+                team_id="t1",
+                event_type="practice",
+                sessions_per_week=1,
+                duration_minutes=45,
+                allowed_days=[1],
+                earliest_start=time(17, 0),
+                latest_end=time(18, 0),
+                active_from=date(2026, 11, 3),
+                active_until=date(2026, 11, 3),
+            )
+        ]
+    )
+    proposal = solve(problem, rules)
+    assert len(proposal.events) == 1
+    assert proposal.events[0].starts_at.date() == date(2026, 11, 3)
+    assert not proposal.shortfalls
+
+
 def test_requirement_title_used_for_events() -> None:
     problem = Problem(
         teams=[Team(id="t1", name="U12")],

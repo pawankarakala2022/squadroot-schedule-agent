@@ -5,11 +5,14 @@ loopback sockets, so no HTTP client can run here); the browser talks to
 the same functions over HTTP.
 """
 
+import os
+
 import pytest
 
 pytest.importorskip("fastapi")  # demo extra: plain installs skip these tests
 from fastapi import HTTPException
 
+import app.main as app_main
 from app.main import (
     CLUB,
     api_approve,
@@ -20,6 +23,7 @@ from app.main import (
     api_revise,
     get_club,
     index,
+    make_chat,
     vision_result,
     voice_result,
 )
@@ -94,7 +98,22 @@ def test_mock_voice_and_vision() -> None:
 
 def test_errors_are_readable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    monkeypatch.setattr(app_main, "_load_dotenv", lambda: None)  # isolate from a real .env
     with pytest.raises(HTTPException, match="MODEL_API_KEY"):
         api_plan({"mode": "meta", "request": "x"})  # no key, no network attempted
     with pytest.raises(HTTPException):
         api_notices({"mode": "mock", "events": []})
+
+
+def test_dotenv_file_is_picked_for_meta(
+    monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """A key stored only in ROOT/.env must satisfy meta mode (no export needed)."""
+    for var in ("MODEL_API_KEY", "META_MODEL_API_BASE", "META_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    (tmp_path / ".env").write_text("MODEL_API_KEY=test-key-123\n", encoding="utf-8")
+    monkeypatch.setattr(app_main, "ROOT", tmp_path)
+    try:
+        assert callable(make_chat("meta"))
+    finally:
+        for var in ("MODEL_API_KEY", "META_MODEL_API_BASE", "META_MODEL"):
+            os.environ.pop(var, None)

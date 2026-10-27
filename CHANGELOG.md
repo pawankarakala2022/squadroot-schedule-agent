@@ -1,5 +1,18 @@
 # Changelog
 
+## v4.0.0 (2026-10-27)
+
+Breaking (Requirement shape grew, old dicts still parse): event-planner
+dates. `Requirement` gains `active_from` / `active_until` (YYYY-MM-DD,
+empty means unset, JSON round-trip; dicts without the keys parse as
+unbounded). The solver only places dates inside the window and skips
+out-of-scope weeks with no shortfall, so "next Tuesday" is one session
+on that date instead of every Tuesday. `understand_request` anchors
+relative dates to today in the problem timezone, tells the model a game
+is a one-off fixture while a dateless practice recurs all season, and
+validates the window (bad or empty ranges dropped and reported). The
+agent's previous-rules context renders the window so revises keep it.
+
 ## v3.2.0 (2026-10-27)
 
 Additive, backward compatible: cancellations. `CancelFilter` (team /

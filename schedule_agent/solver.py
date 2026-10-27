@@ -151,6 +151,21 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
     preferred: dict[int, list[tuple[int, time, str]]] = {}
     short_so_far: dict[int, int] = {i: 0 for i in range(len(rules.requirements))}
 
+    def _week_overlaps(req: Requirement, week_dates: list[date]) -> bool:
+        """True when at least one date in the week falls inside the requirement window."""
+        if req.active_from is None and req.active_until is None:
+            return True
+        return any(
+            (req.active_from is None or d >= req.active_from)
+            and (req.active_until is None or d <= req.active_until)
+            for d in week_dates
+        )
+
+    def _in_window(req: Requirement, d: date) -> bool:
+        return (req.active_from is None or d >= req.active_from) and (
+            req.active_until is None or d <= req.active_until
+        )
+
     for week_dates in _weeks(problem.season_start, problem.season_end):
         week_start = week_dates[0]
         by_weekday = {}
@@ -165,6 +180,8 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
             req = rules.requirements[idx]
             if req.sessions_per_week == 0:
                 continue
+            if not _week_overlaps(req, week_dates):
+                continue  # event-planner window: this week is out of scope, no shortfall
             if req.team_id not in team_ids:
                 shortfalls.append(
                     Shortfall(
@@ -202,7 +219,7 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                 if made >= req.sessions_per_week:
                     break
                 d = by_weekday.get(weekday)
-                if d is None or d in blackout or fid not in valid_fields:
+                if d is None or d in blackout or fid not in valid_fields or not _in_window(req, d):
                     continue
                 start_dt = datetime.combine(d, slot_t, tzinfo=tz)
                 end_dt = start_dt + duration
@@ -223,7 +240,7 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
             while made < req.sessions_per_week:
                 found = None
                 for d in sorted(week_dates):
-                    if d.weekday() not in valid_days or d in blackout:
+                    if d.weekday() not in valid_days or d in blackout or not _in_window(req, d):
                         continue
                     for fid in valid_fields:
                         f = field_by_id[fid]

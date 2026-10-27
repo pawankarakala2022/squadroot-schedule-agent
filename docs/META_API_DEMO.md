@@ -92,7 +92,16 @@ If the trace says `muse-spark-1.3`, the call was live.
 - Expected: checks show green chips, shortfalls list what did not fit,
   rain moves only hit sessions as `old time/field -> new time/field`.
 
-## 7. If it fails
+## 7. `.env` not picked up? (fixed)
+
+The library reads only `os.environ`. The demo app in [main.py](../app/main.py)
+now loads allowlisted keys from `.env` on every `meta` / `open` / voice call,
+without overriding real environment variables. So editing `.env` works without
+restarting `python -m app`. If you still see
+`Meta API mode needs MODEL_API_KEY in .env`, check the key is on one line as
+`MODEL_API_KEY=...` with no quotes needed.
+
+## 8. If it fails
 
 | Symptom | Fix |
 |---|---|

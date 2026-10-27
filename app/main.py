@@ -11,6 +11,7 @@ via ``OPEN_MODEL_*`` env vars).
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -51,6 +52,43 @@ TEAM_NAMES = {t["id"]: t["name"] for t in CLUB["teams"]}
 LANGUAGES_BY_TEAM = {t["id"]: list(t.get("languages", ["en"])) for t in CLUB["teams"]}
 COACH = CLUB["coach"]
 TZ = CLUB["timezone"]
+
+_DOTENV_ALLOWLIST = frozenset(
+    {
+        "META_MODEL_API_BASE",
+        "MODEL_API_KEY",
+        "META_MODEL",
+        "META_TRANSCRIBE_MODEL",
+        "OPEN_MODEL_API_BASE",
+        "OPEN_MODEL_API_KEY",
+        "OPEN_MODEL",
+    }
+)
+
+
+def _load_dotenv() -> None:
+    """Fill allowlisted vars from ROOT/.env without overriding real env.
+
+    The library reads only os.environ (no file I/O by design), so the
+    demo app does the .env loading here. Runs on every mode lookup so
+    editing .env does not require re-importing the app.
+    """
+    try:
+        text = (ROOT / ".env").read_text(encoding="utf-8")
+    except OSError:
+        return
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        var, _, value = line.partition("=")
+        var = var.strip()
+        if var in _DOTENV_ALLOWLIST:
+            # Strip quotes and trailing comments ("KEY=abc # comment").
+            cleaned = value.strip().strip("\"'")
+            cleaned = cleaned.split("#", 1)[0].strip().strip("\"'")
+            if cleaned:
+                os.environ.setdefault(var, cleaned)
 
 MOCK_RULES = {
     "requirements": [
@@ -150,29 +188,16 @@ def make_chat(mode: str) -> ChatFn:
     if mode == "mock":
         return mock_chat
     if mode == "meta":
+        _load_dotenv()
         config = ModelConfig.from_env()
         if config is None:
             raise HTTPException(400, "Meta API mode needs MODEL_API_KEY in .env (or use Mock mode).")
         return chat_fn(config)
     if mode == "open":
-        import os
-
+        _load_dotenv()
         base = os.environ.get("OPEN_MODEL_API_BASE", "")
         key = os.environ.get("OPEN_MODEL_API_KEY", "")
         model = os.environ.get("OPEN_MODEL", "") or "meta-models/muse-spark-open-1026"
-        # Read the allowlisted vars from .env too (stdlib, never overrides real env).
-        try:
-            for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    var, _, value = line.partition("=")
-                    if var.strip() in ("OPEN_MODEL_API_BASE", "OPEN_MODEL_API_KEY", "OPEN_MODEL"):
-                        os.environ.setdefault(var.strip(), value.strip())
-        except OSError:
-            pass
-        base = base or os.environ.get("OPEN_MODEL_API_BASE", "")
-        key = key or os.environ.get("OPEN_MODEL_API_KEY", "")
-        model = model if model != "meta-models/muse-spark-open-1026" else os.environ.get("OPEN_MODEL", "") or model
         if not base or not key:
             raise HTTPException(400, "Open-weights mode needs OPEN_MODEL_API_BASE/KEY in .env (or use Mock mode).")
         return chat_fn(ModelConfig(base_url=base, model=model, api_key=key))
@@ -355,6 +380,7 @@ def voice_result(mode: str, data: bytes, filename: str, mime_type: str | None) -
                 "note": "Mock mode: sample transcript from demo/voice_note.txt."}
     if mode != "meta":
         raise HTTPException(400, "Voice transcription needs the Meta API key (or use Mock mode).")
+    _load_dotenv()
     config = VoiceConfig.from_env()
     if config is None:
         raise HTTPException(400, "Voice needs MODEL_API_KEY in .env (or use Mock mode).")

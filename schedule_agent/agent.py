@@ -124,6 +124,10 @@ def _render_previous(problem: Problem, previous: Rules) -> str:
             bits.append(window)
         if req.title:
             bits.append(f"titled {req.title!r}")
+        if req.active_from is not None or req.active_until is not None:
+            start = req.active_from.isoformat() if req.active_from else "..."
+            end = req.active_until.isoformat() if req.active_until else "..."
+            bits.append(f"only {start}..{end}")
         parts.append(" ".join(bits))
     parts.append(f"gap {previous.min_gap_days}d")
     if previous.blackout_dates:
