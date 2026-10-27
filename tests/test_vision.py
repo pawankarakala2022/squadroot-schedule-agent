@@ -2,6 +2,7 @@
 
 import json
 from datetime import date, time
+from pathlib import Path
 
 import pytest
 
@@ -61,6 +62,17 @@ def response_format_is_strict(response_format):  # type: ignore[no-untyped-def]
     assert response_format["json_schema"]["strict"] is True
     assert schema["additionalProperties"] is False
     return True
+
+
+def test_fixture_png_is_valid_and_reads() -> None:
+    raw = (Path(__file__).parent.parent / "demo" / "schedule_tiny.png").read_bytes()
+    assert raw[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10])
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        return _payload([_row()])
+
+    schedule = extract_games(_problem(), raw, chat, mime_type="image/png")
+    assert [g.matched for g in schedule.games] == [True]
 
 
 def test_image_sent_as_data_url() -> None:

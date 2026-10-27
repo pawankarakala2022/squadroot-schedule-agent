@@ -31,3 +31,14 @@ evals/runs/
 pip-*/
 tmp*/
 manual_phase*_check.py
+
+# Voice recordings (biometric data: never commit; judges record their own)
+*.m4a
+*.wav
+*.mp3
+*.ogg
+*.webm
+*.flac
+# ...except tiny format fixtures for the offline test suite (tones, not speech)
+!demo/voice_*.wav
+!demo/schedule_tiny.png

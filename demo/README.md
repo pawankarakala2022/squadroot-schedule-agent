@@ -8,3 +8,7 @@
   with any phone recorder (or speak it into the demo app in Phase 8) and send
   the audio bytes to `transcribe_audio`. This sandbox has no usable text to
   speech voices, so no recorded sample is committed.
+- `voice_16k.wav` (valid), `voice_8k.wav` / `voice_stereo_16k.wav`
+  (rejected formats), `schedule_tiny.png`: tiny format fixtures for the
+  offline test suite. The wavs are sine tones, not speech: they exercise
+  upload validation, never transcription quality.

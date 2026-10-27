@@ -3,6 +3,7 @@
 import functools
 import io
 import wave
+from pathlib import Path
 
 import httpx
 import pytest
@@ -12,6 +13,7 @@ from schedule_agent.errors import AgentError, ModelError
 from schedule_agent.voice import VoiceConfig, transcribe_audio
 
 _RealClient = httpx.Client
+_DEMO = Path(__file__).parent.parent / "demo"
 
 
 def _wav(rate: int = 16000) -> bytes:
@@ -99,6 +101,24 @@ def test_valid_wav_passes_but_wrong_rate_fails_early(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(voice.httpx, "Client", _factory(no_calls))
     with pytest.raises(AgentError):
         transcribe_audio(_config(), _wav(8000), filename="note.wav")
+
+
+def test_fixture_files_drive_validation_and_upload(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transcript": "fixture", "turns": []})
+
+    monkeypatch.setattr(voice.httpx, "Client", _factory(handler))
+    heard = transcribe_audio(_config(), (_DEMO / "voice_16k.wav").read_bytes(), filename="voice_16k.wav")
+    assert heard == "fixture"
+
+    def no_calls(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("model must not be called")
+
+    monkeypatch.setattr(voice.httpx, "Client", _factory(no_calls))
+    with pytest.raises(AgentError):  # 8 kHz rejected client-side
+        transcribe_audio(_config(), (_DEMO / "voice_8k.wav").read_bytes(), filename="voice_8k.wav")
+    with pytest.raises(AgentError):  # stereo rejected client-side
+        transcribe_audio(_config(), (_DEMO / "voice_stereo_16k.wav").read_bytes(), filename="voice_stereo_16k.wav")
 
 
 def test_transcribe_retries_once_on_500(monkeypatch: pytest.MonkeyPatch) -> None:
