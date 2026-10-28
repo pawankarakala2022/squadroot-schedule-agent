@@ -1,5 +1,23 @@
 # Changelog
 
+## v4.2.1 (2026-10-28)
+
+Performance fix, no name or shape changed and solver/check outputs are
+identical. The solver and checks no longer scan the whole season per
+candidate/event: placed events and busy times are bucketed by local
+date (grid slots cached per window), and the pairwise checks sweep
+per-field/per-team groups in start order, still reporting the first
+conflicting event index. Worst measured cases: a 100-team tight season
+that took 58.4s to solve now takes 1.9s, and checking 3,600 events that
+took 9.6s now takes 0.07s. `explain_proposal` sends recurring session patterns
+(team/type/weekday/time/field/count/date-range, capped) instead of one
+line per session, so a 480-session season drops from ~38k to ~2.5k
+prompt characters. Solve/check steps in `agent.last_trace` now carry
+`latency_ms`, so a slow step is identifiable in the host UI: any step
+still near 30,000ms is a single model call (the client read timeout),
+not the solver. The model client now fails connect/pool errors in 5s
+instead of 30s and backs off 0.5s before its one 429/5xx retry.
+
 ## v4.2.0 (2026-10-28)
 
 Additive, backward compatible (no existing name or shape changed; new

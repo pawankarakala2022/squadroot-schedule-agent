@@ -22,6 +22,8 @@ from .errors import ModelError
 DEFAULT_API_BASE = "https://api.meta.ai/v1"
 DEFAULT_MODEL = "muse-spark-1.3"
 REQUEST_TIMEOUT_SECONDS = 30.0
+CONNECT_TIMEOUT_SECONDS = 5.0
+RETRY_BACKOFF_SECONDS = 0.5
 
 # Message list + optional OpenAI-style response_format -> assistant text.
 ChatFn = Callable[..., str]
@@ -87,7 +89,14 @@ def chat_fn(config: ModelConfig, *, temperature: float = 0.0) -> ChatFn:
             with lock:
                 client = state.get("client")
                 if client is None:
-                    state["client"] = client = httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS)
+                    # Connect/pool failures fail in seconds; only waiting
+                    # for the model's answer gets the full read budget.
+                    timeout = httpx.Timeout(
+                        REQUEST_TIMEOUT_SECONDS,
+                        connect=CONNECT_TIMEOUT_SECONDS,
+                        pool=CONNECT_TIMEOUT_SECONDS,
+                    )
+                    state["client"] = client = httpx.Client(timeout=timeout)
         return client
 
     def chat(
@@ -108,13 +117,15 @@ def chat_fn(config: ModelConfig, *, temperature: float = 0.0) -> ChatFn:
         last_status: int | None = None
         started = time.monotonic()
         client = _client()
-        for _ in range(2):  # one try + one retry on 429/5xx
+        for attempt in range(2):  # one try + one retry on 429/5xx
             try:
                 response = client.post(url, json=payload, headers=headers)
             except httpx.HTTPError as exc:
                 raise ModelError("Assistant unavailable: could not reach the model.") from exc
             if response.status_code in (429, 500, 502, 503, 504):
                 last_status = response.status_code
+                if attempt == 0:
+                    time.sleep(RETRY_BACKOFF_SECONDS)  # brief backoff, not an instant hammer
                 continue
             if response.status_code >= 400:
                 raise ModelError("Assistant unavailable: the model request failed.")

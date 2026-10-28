@@ -1,4 +1,5 @@
 # Build log
+- 2026-10-28: Performance fix v4.2.1: solver/checks day-bucket indexing + sweep (worst solver case 58.4s -> 1.9s, worst checks case 9.6s -> 0.07s, outputs identical, differential-checked vs brute force), explain session-pattern aggregation (38k -> 2.5k chars at 480 sessions), solve/check latency_ms in trace, llm 5s connect timeout + 0.5s retry backoff; perf regression tests added; 176 pytest green. (Muse Code)
 - 2026-10-28: Dynamic layer v4.2.0: dates.py code-resolved relative dates in all prompts, language= threading with English team names, holidays.py US federal holidays, availability.py coach unavailability -> Busy, vision grounds/coach photo extractor, router rain-no-target -> cancel; 173 pytest tests green. (Muse Code)
 - 2026-10-28: Added README "Calling it from a SaaS app" (library call, Proposal output, demo-vs-SaaS seams); 166 pytest tests green. (Muse Code)
 - 2026-10-27: Cleaned repo root (deleted regenerable pip-*/pytest-of-preet/.pytest_cache leftovers; kept README-referenced manual scripts, voice notes, recorder); 146 pytest tests green. (Muse Code)

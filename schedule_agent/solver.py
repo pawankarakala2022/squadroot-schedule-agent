@@ -78,10 +78,19 @@ def _fits(
     field_id: str,
     start_dt: datetime,
     end_dt: datetime,
-    placed: list[ProposedEvent],
-    team_busy: list[tuple[datetime, datetime]],
-    field_busy: list[tuple[datetime, datetime]],
+    team_day: dict[tuple[str, date], list[ProposedEvent]],
+    field_day: dict[tuple[str, date], list[ProposedEvent]],
+    team_busy_day: dict[tuple[str, date], list[tuple[datetime, datetime]]],
+    field_busy_day: dict[tuple[str, date], list[tuple[datetime, datetime]]],
 ) -> bool:
+    """Fit test against day-bucketed indexes only (never a full-season scan).
+
+    Placed/busy intervals are bucketed by local date, so a candidate only
+    ever inspects events and busy times that can touch its own day (plus
+    the previous day, for intervals crossing midnight) and, for the gap
+    rule, the team's events within ``min_gap_days``. The accept/reject
+    answer is identical to scanning every placed event and busy time.
+    """
     day = start_dt.date()
     if day in blackout:
         return False
@@ -96,19 +105,26 @@ def _fits(
         return False
     if req.latest_end is not None and end_t > req.latest_end:
         return False
-    for ev in placed:
-        if ev.team_id == req.team_id or ev.field_id == field_id:
+    prev_day = day - timedelta(days=1)
+    for bucket_day in (prev_day, day):
+        for ev in team_day.get((req.team_id, bucket_day), ()):
             if _overlaps(start_dt, end_dt, ev.starts_at, ev.ends_at):
                 return False
-        if ev.team_id == req.team_id and min_gap_days > 0:
-            if abs((day - ev.starts_at.date()).days) < min_gap_days:
+        for ev in field_day.get((field_id, bucket_day), ()):
+            if _overlaps(start_dt, end_dt, ev.starts_at, ev.ends_at):
                 return False
-    for b_start, b_end in team_busy:
-        if _overlaps(start_dt, end_dt, b_start, b_end):
-            return False
-    for b_start, b_end in field_busy:
-        if _overlaps(start_dt, end_dt, b_start, b_end):
-            return False
+    if min_gap_days > 0:
+        for offset in range(-(min_gap_days - 1), min_gap_days):
+            for ev in team_day.get((req.team_id, day + timedelta(days=offset)), ()):
+                if abs((day - ev.starts_at.date()).days) < min_gap_days:
+                    return False
+    for bucket_day in (prev_day, day):
+        for b_start, b_end in team_busy_day.get((req.team_id, bucket_day), ()):
+            if _overlaps(start_dt, end_dt, b_start, b_end):
+                return False
+        for b_start, b_end in field_busy_day.get((field_id, bucket_day), ()):
+            if _overlaps(start_dt, end_dt, b_start, b_end):
+                return False
     return True
 
 
@@ -136,17 +152,45 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
     field_by_id = {f.id: f for f in problem.fields}
     blackout = set(problem.blackout_dates) | set(rules.blackout_dates)
 
-    team_busy: dict[str, list[tuple[datetime, datetime]]] = {t.id: [] for t in problem.teams}
-    field_busy: dict[str, list[tuple[datetime, datetime]]] = {f.id: [] for f in problem.fields}
+    # Busy intervals bucketed by (resource id, local date): a candidate
+    # slot only ever checks busy times touching its own day, however many
+    # the host supplied (ground-complement busy runs to hundreds).
+    team_busy_day: dict[tuple[str, date], list[tuple[datetime, datetime]]] = {}
+    field_busy_day: dict[tuple[str, date], list[tuple[datetime, datetime]]] = {}
+    known_team_ids = {t.id for t in problem.teams}
+    known_field_ids = {f.id for f in problem.fields}
     for b in problem.busy:
         kind, _, rid = b.resource.partition(":")
-        if kind == "team" and rid in team_busy:
-            team_busy[rid].append((b.start, b.end))
-        elif kind == "field" and rid in field_busy:
-            field_busy[rid].append((b.start, b.end))
-        # Unknown resources are ignored: the host owns ids we never saw.
+        if kind == "team" and rid in known_team_ids:
+            target = team_busy_day
+        elif kind == "field" and rid in known_field_ids:
+            target = field_busy_day
+        else:
+            continue  # Unknown resources are ignored: the host owns ids we never saw.
+        first = max(b.start.astimezone(tz).date(), problem.season_start)
+        last = min(b.end.astimezone(tz).date(), problem.season_end)
+        day = first
+        while day <= last:
+            target.setdefault((rid, day), []).append((b.start, b.end))
+            day += timedelta(days=1)
 
     placed: list[ProposedEvent] = []
+    team_day: dict[tuple[str, date], list[ProposedEvent]] = {}
+    field_day: dict[tuple[str, date], list[ProposedEvent]] = {}
+    grid_cache: dict[tuple[time, time, int], list[time]] = {}
+
+    def _place(ev: ProposedEvent) -> None:
+        placed.append(ev)
+        day = ev.starts_at.date()
+        team_day.setdefault((ev.team_id, day), []).append(ev)
+        field_day.setdefault((ev.field_id, day), []).append(ev)
+
+    def _grid(window_start: time, window_end: time, duration: timedelta) -> list[time]:
+        key = (window_start, window_end, int(duration.total_seconds() // 60))
+        grid = grid_cache.get(key)
+        if grid is None:
+            grid = grid_cache[key] = _day_grid(window_start, window_end, duration)
+        return grid
     shortfalls: list[Shortfall] = []
     preferred: dict[int, list[tuple[int, time, str]]] = {}
     short_so_far: dict[int, int] = {i: 0 for i in range(len(rules.requirements))}
@@ -223,8 +267,8 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                     continue
                 start_dt = datetime.combine(d, slot_t, tzinfo=tz)
                 end_dt = start_dt + duration
-                if _fits(req, rules.min_gap_days, blackout, fid, start_dt, end_dt, placed, team_busy.get(req.team_id, []), field_busy.get(fid, [])):
-                    placed.append(
+                if _fits(req, rules.min_gap_days, blackout, fid, start_dt, end_dt, team_day, field_day, team_busy_day, field_busy_day):
+                    _place(
                         ProposedEvent(
                             team_id=req.team_id,
                             field_id=fid,
@@ -237,40 +281,43 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                     made += 1
 
             # 2) Greedy search in deterministic order: date, field, time.
+            # The candidate list is built once per requirement-week (same
+            # order as before); each extra session rescans it, but every
+            # probe is now a day-bucket lookup instead of a season scan.
+            candidates: list[tuple[date, str, time]] = []
+            for d in sorted(week_dates):
+                if d.weekday() not in valid_days or d in blackout or not _in_window(req, d):
+                    continue
+                for fid in valid_fields:
+                    f = field_by_id[fid]
+                    w_start, w_end = _window(req, f.open_from, f.open_until)
+                    if w_start >= w_end:
+                        continue
+                    for slot_t in _grid(w_start, w_end, duration):
+                        candidates.append((d, fid, slot_t))
             while made < req.sessions_per_week:
                 found = None
-                for d in sorted(week_dates):
-                    if d.weekday() not in valid_days or d in blackout or not _in_window(req, d):
-                        continue
-                    for fid in valid_fields:
-                        f = field_by_id[fid]
-                        w_start, w_end = _window(req, f.open_from, f.open_until)
-                        if w_start >= w_end:
-                            continue
-                        for slot_t in _day_grid(w_start, w_end, duration):
-                            start_dt = datetime.combine(d, slot_t, tzinfo=tz)
-                            end_dt = start_dt + duration
-                            if _fits(
-                                req,
-                                rules.min_gap_days,
-                                blackout,
-                                fid,
-                                start_dt,
-                                end_dt,
-                                placed,
-                                team_busy.get(req.team_id, []),
-                                field_busy.get(fid, []),
-                            ):
-                                found = (fid, start_dt, end_dt)
-                                break
-                        if found is not None:
-                            break
-                    if found is not None:
+                for d, fid, slot_t in candidates:
+                    start_dt = datetime.combine(d, slot_t, tzinfo=tz)
+                    end_dt = start_dt + duration
+                    if _fits(
+                        req,
+                        rules.min_gap_days,
+                        blackout,
+                        fid,
+                        start_dt,
+                        end_dt,
+                        team_day,
+                        field_day,
+                        team_busy_day,
+                        field_busy_day,
+                    ):
+                        found = (fid, start_dt, end_dt)
                         break
                 if found is None:
                     break
                 fid, start_dt, end_dt = found
-                placed.append(
+                _place(
                     ProposedEvent(
                         team_id=req.team_id,
                         field_id=fid,
@@ -283,7 +330,12 @@ def solve(problem: Problem, rules: Rules) -> Proposal:
                 made += 1
 
             if idx not in preferred and made > 0:
-                week_events = [e for e in placed if e.team_id == req.team_id and e.event_type == req.event_type and e.starts_at.date() in set(week_dates)]
+                week_events = [
+                    e
+                    for d in week_dates
+                    for e in team_day.get((req.team_id, d), [])
+                    if e.event_type == req.event_type
+                ]
                 preferred[idx] = sorted((e.starts_at.weekday(), e.starts_at.time(), e.field_id) for e in week_events)
 
             short_so_far[idx] += req.sessions_per_week - made

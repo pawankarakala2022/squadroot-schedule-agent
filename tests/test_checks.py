@@ -73,6 +73,19 @@ def test_field_double_booking_caught() -> None:
     assert got[("team_overlap", 1)].passed
 
 
+def test_field_double_booking_reports_first_conflicting_event() -> None:
+    events = [
+        _event("t1", "f1", 7, time(17, 0), time(18, 0)),
+        _event("t2", "f1", 7, time(19, 0), time(20, 0)),
+        _event("t2", "f1", 7, time(17, 30), time(18, 30)),
+    ]
+    got = _by_check(run_checks(_problem(), _rules(), events))
+    assert not got[("field_double_booking", 0)].passed
+    assert "#2" in got[("field_double_booking", 0)].reason
+    assert "#0" in got[("field_double_booking", 2)].reason
+    assert got[("field_double_booking", 1)].passed
+
+
 def test_team_overlap_caught() -> None:
     events = [
         _event("t1", "f1", 7, time(17, 0), time(18, 0)),

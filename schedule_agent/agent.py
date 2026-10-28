@@ -409,9 +409,16 @@ class ScheduleAgent:
             min_gap_days=0,
             notes=[f"Cancel filter matched {len(cancelled)} of {len(current)} sessions.", *filt.notes],
         )
+        started = time.monotonic()
         results = run_checks(problem, rules, kept)
         self.last_trace.append(
-            {"step": "checks", "round": 0, "results": len(results), "failed": sum(1 for c in results if not c.passed)}
+            {
+                "step": "checks",
+                "round": 0,
+                "results": len(results),
+                "failed": sum(1 for c in results if not c.passed),
+                "latency_ms": int((time.monotonic() - started) * 1000),
+            }
         )
         proposal = Proposal(rules=rules, events=kept, check_results=results, shortfalls=[])
         proposal.summary = "\n".join(lines) + "\n" + self._explain(problem, proposal, language)
@@ -581,9 +588,18 @@ class ScheduleAgent:
             # Final checks run against the real calendar (kept events would
             # trivially "collide" with the freeze-busy used for solving).
             checking = _rebuild(problem, list(problem.busy) + extra)
+            started = time.monotonic()
             results = run_checks(checking, rules, ordered)
             failed = sum(1 for c in results if not c.passed)
-            self.last_trace.append({"step": "checks", "round": rounds, "results": len(results), "failed": failed})
+            self.last_trace.append(
+                {
+                    "step": "checks",
+                    "round": rounds,
+                    "results": len(results),
+                    "failed": failed,
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                }
+            )
             reported = self._call_verify(verify, ordered) if verify is not None else []
             new = [b for b in reported if (b.resource, b.start, b.end) not in seen]
             self.last_trace.append(
@@ -678,6 +694,7 @@ class ScheduleAgent:
                 busy=busy_now,
                 blackout_dates=problem.blackout_dates,
             )
+            started = time.monotonic()
             draft = solve(sub, Rules(requirements=[req], min_gap_days=0))
             self.last_trace.append(
                 {
@@ -686,6 +703,7 @@ class ScheduleAgent:
                     "session": i,
                     "events": len(draft.events),
                     "shortfalls": len(draft.shortfalls),
+                    "latency_ms": int((time.monotonic() - started) * 1000),
                 }
             )
             if draft.events:
@@ -801,13 +819,29 @@ class ScheduleAgent:
                 busy=working_busy,
                 blackout_dates=problem.blackout_dates,
             )
+            started = time.monotonic()
             draft = solve(working, rules)
             self.last_trace.append(
-                {"step": "solve", "round": rounds, "events": len(draft.events), "shortfalls": len(draft.shortfalls)}
+                {
+                    "step": "solve",
+                    "round": rounds,
+                    "events": len(draft.events),
+                    "shortfalls": len(draft.shortfalls),
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                }
             )
+            started = time.monotonic()
             results = run_checks(working, rules, draft.events)
             failed = sum(1 for c in results if not c.passed)
-            self.last_trace.append({"step": "checks", "round": rounds, "results": len(results), "failed": failed})
+            self.last_trace.append(
+                {
+                    "step": "checks",
+                    "round": rounds,
+                    "results": len(results),
+                    "failed": failed,
+                    "latency_ms": int((time.monotonic() - started) * 1000),
+                }
+            )
             extra = self._call_verify(verify, draft.events) if verify is not None else []
             new = [b for b in extra if (b.resource, b.start, b.end) not in seen]
             self.last_trace.append(

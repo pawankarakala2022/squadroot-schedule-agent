@@ -134,6 +134,14 @@ agent calls identical:
 - **Relative dates** ("next Tue/week/month") are resolved in code in the club timezone; the model only copies concrete dates.
 - **Host still owns:** login, per-club tenant isolation, upload size/type checks, audit log, and the final save-time conflict check. Do not deploy `app/` as the SaaS.
 
+## Performance notes (v4.2.1) — if a request feels slow
+
+- **Read `agent.last_trace` first.** Every solve/check step now carries `latency_ms`, as does every model call. At club scale the solver and checks are milliseconds to ~2s even for 100 teams; a step near 30,000ms is one model call hitting the client read timeout, not the solver.
+- **Budget the model calls, not the solver.** `handle()` costs route + understand (+ one repair retry if validation fails) + explain, sequentially. When the host UI already knows the intent, call `plan`/`revise`/`reschedule`/`cancel` directly and save the router call.
+- **Explain stays small by construction.** Summaries are built from recurring session patterns (max 80 lines), not one line per session, so season size no longer inflates that call.
+- **Verify rounds multiply solve+check only** (max 3 re-solves, no model calls in the loop); a hook that returns new busy times every round is the usual cause of repeated work — return only genuinely new intervals.
+- **Provider ceiling:** connect/pool failures fail in 5s; waiting for a model answer is capped at 30s (`REQUEST_TIMEOUT_SECONDS`). If traces repeatedly show ~30s model steps, the fix is provider/model choice or a smaller request, not solver tuning.
+
 ## License
 
 MIT. See `LICENSE`.
