@@ -2,8 +2,8 @@
   "club": "Riverside Youth Club",
   "note": "Fictional demo data: no real clubs, families or people.",
   "timezone": "America/Toronto",
-  "season_start": "2026-11-02",
-  "season_end": "2026-11-29",
+  "season_start": "2026-10-01",
+  "season_end": "2026-12-31",
   "teams": [
     {"id": "t1", "name": "Foxes", "languages": ["es", "en"]},
     {"id": "t2", "name": "Badgers", "languages": ["en", "vi"]}
