@@ -105,6 +105,13 @@ def test_no_match_fails_safely() -> None:
     assert len(chat.calls) == 1
 
 
+def test_no_match_error_echoes_the_filter() -> None:
+    chat = _chat_script([_filter_json(team_aliases=["T2"], event_types=["session"])])
+    with pytest.raises(AgentError, match="Badgers") as exc_info:
+        ScheduleAgent(chat).cancel(_problem(), _events(), "Badgers cancel next session")
+    assert "'session'" in str(exc_info.value)
+
+
 def test_unselective_filter_rejected_after_retry() -> None:
     chat = _chat_script([_filter_json(), _filter_json()])
     with pytest.raises(AgentError, match="could not understand"):

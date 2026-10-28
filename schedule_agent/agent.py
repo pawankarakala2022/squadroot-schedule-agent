@@ -21,7 +21,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .cancel import parse_cancel_filter
+from .cancel import CancelFilter, parse_cancel_filter
 from .checks import run_checks
 from .disruption import Disruption, parse_disruption
 from .errors import AgentError
@@ -98,6 +98,37 @@ def _normalize_previous(previous: Rules | dict[str, Any] | None) -> Rules | None
         except (KeyError, TypeError, ValueError) as exc:
             raise AgentError("The saved plan could not be read; please start a new request.") from exc
     raise AgentError("The saved plan could not be read; please start a new request.")
+
+
+_DAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _describe_filter(problem: Problem, filt: CancelFilter) -> str:
+    """One-line account of what a cancel filter selects, for safe-failure messages."""
+    team_name = {t.id: t.name for t in problem.teams}
+    field_name = {f.id: f.name for f in problem.fields}
+    bits = []
+    if filt.team_ids:
+        bits.append("team " + ", ".join(team_name.get(t, t) for t in filt.team_ids))
+    if filt.field_ids:
+        bits.append("field " + ", ".join(field_name.get(f, f) for f in filt.field_ids))
+    if filt.weekdays:
+        bits.append("day " + ", ".join(_DAY_NAMES[d] for d in filt.weekdays))
+    if filt.date_from is not None and filt.date_to is not None:
+        if filt.date_from == filt.date_to:
+            bits.append("date " + filt.date_from.isoformat())
+        else:
+            bits.append(f"dates {filt.date_from.isoformat()}..{filt.date_to.isoformat()}")
+    elif filt.date_from is not None:
+        bits.append("from " + filt.date_from.isoformat())
+    elif filt.date_to is not None:
+        bits.append("until " + filt.date_to.isoformat())
+    if filt.event_types:
+        bits.append("type " + ", ".join(f"'{t}'" for t in filt.event_types))
+    desc = "; ".join(bits)
+    if filt.notes:
+        desc += ". Notes: " + "; ".join(filt.notes)
+    return desc
 
 
 def _render_previous(problem: Problem, previous: Rules) -> str:
@@ -348,7 +379,7 @@ class ScheduleAgent:
         self.last_trace.append({"step": "cancel", "cancelled": len(cancelled), "kept": len(kept)})
         if not cancelled:
             raise AgentError(
-                "No sessions matched that description; nothing was cancelled. "
+                "No sessions matched (" + _describe_filter(problem, filt) + "); nothing was cancelled. "
                 "Please say which team, day or date to cancel."
             )
         team_name = {t.id: t.name for t in problem.teams}
