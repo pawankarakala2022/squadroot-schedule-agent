@@ -59,9 +59,13 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
      `Disruption(date_from, date_to, field_ids=[] meaning all, search_days=7,
      not_before=None, notes=[])`, `CancelFilter(team_ids=[], field_ids=[],
      weekdays=[], date_from=None, date_to=None, event_types=[], notes=[])`.
-   - Agent: `ScheduleAgent(chat, *, explain_chat=None)`,
+   - Agent: `ScheduleAgent(chat, *, explain_chat=None, deterministic_summary=False)`
+     (deterministic_summary renders English summaries in code, no explain model call),
      `agent.plan(problem, request, *, previous=None, verify=None) -> Proposal`,
      `agent.revise(problem, proposal, request, *, verify=None) -> Proposal`,
+     `agent.add(problem, events, request, *, previous=None, verify=None) -> Proposal`
+     (insert-only: existing sessions frozen and never move, only the new
+     session(s) are placed around them; no calendar fails safely),
      `agent.approve(proposal) -> ApplyResult` (the only path to an approval;
      refuses drafts with failed checks; applies nothing — the host saves),
      `agent.reschedule(problem, events, request, *, verify=None, not_before=None,
@@ -74,14 +78,15 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
      lists each cancellation; a request matching nothing fails safely),
      `agent.handle(problem, request, *, proposal=None, events=None, previous=None,
      verify=None, not_before=None, allowed_fields=None) -> Proposal` (one entry
-     point: the model routes any wording to plan/revise/reschedule/cancel via
+     point: the router routes any wording to plan/revise/reschedule/cancel/add via
      `parse_route_intent`, code dispatches; cancel/reschedule with no calendar fail
-     safely, revise with no draft falls back to plan).
+     safely, revise with no draft falls back to plan, add with no calendar falls
+     back to plan and add against a draft extends the draft's sessions).
    - Model: `ModelConfig.from_env() -> ModelConfig | None` (None when no key), `chat_fn(config, *, temperature=0.0)`.
    - Voice: `VoiceConfig.from_env() -> VoiceConfig | None`, `transcribe_audio(config, audio_bytes, *, filename=..., mime_type=None, language=None) -> str`.
    - Vision: `GameImport`, `ScheduleImport`, `extract_games(problem, image_bytes, chat, *, mime_type="image/png") -> ScheduleImport`, `games_to_busy(schedule, problem, *, duration_minutes=60) -> list[Busy]`.
   - Notify: `FamilyNotice`, `FamilyNotices`, `draft_notices(problem, events, chat, *, languages=[...]) -> FamilyNotices` (one drafted notice per family language; every draft must echo each team name, date, time and field name exactly, one repair retry, gaps reported not silently sent).
-  - Router: `Route`, `parse_route_intent(request, chat, *, has_proposal=False, has_events=False) -> Route` (model picks one of plan/revise/reschedule/cancel; strict json_schema, one repair retry, then fail safely).
+  - Router: `Route`, `parse_route_intent(request, chat, *, has_proposal=False, has_events=False) -> Route` (picks one of plan/revise/reschedule/cancel/add; strict json_schema, one repair retry, then fail safely. Conservative English fast path: unambiguous fresh practice/game requests and explicit "add a game/practice" against a calendar route in code with no model call; all other wording goes to the model).
   - Dynamic layer (v4.2.0): `today_in_tz(problem)`, `relative_date_hints(today)`, `problem_date_hints(problem)` (code-resolved "next Tue/week/month" copied by the model in any language); `us_federal_holidays(year)`, `holiday_dates(start, end)`, `with_us_holidays(problem)` (US general holidays merged as blackouts by the host); `AvailabilityParse`, `parse_availability(problem, request, chat) -> AvailabilityParse` (coach unavailability text/transcript -> `Busy`, never availability, no coach entity); `GroundAvailability`, `CoachUnavailability`, `AvailabilityImport`, `extract_availability(problem, image_bytes, chat) -> AvailabilityImport`, `availability_to_busy(import, problem) -> list[Busy]` (grounds/coach photo or screenshot, exact matching). Agent methods accept `language="en"`; team/field names stay in English, never translated. Rain with no named move target routes to cancel; `reschedule` needs a named new date/field.
    - Errors: `AgentError` (bad request / could not understand, safe to show the manager),
      `ModelError` (provider failure, safe to show as "assistant unavailable").

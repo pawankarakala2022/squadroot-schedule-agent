@@ -106,7 +106,9 @@ def test_stream_plan_emits_steps_then_result() -> None:
     assert events[-1]["type"] == "result"
     assert events[-1]["proposal"]["events"], "streamed mock plan must place sessions"
     labels = [e["label"] for e in events if e["type"] == "step" and e["phase"] == "done"]
-    assert labels == ["Understanding the request", "Explaining the summary"]
+    # No "Explaining the summary" step: the demo renders English summaries
+    # deterministically instead of spending a slow model call on them.
+    assert labels == ["Understanding the request"]
     assert all(isinstance(e["latency_ms"], int) for e in events if e.get("phase") == "done")
 
 

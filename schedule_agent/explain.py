@@ -72,6 +72,34 @@ def _session_patterns(problem: Problem, proposal: Proposal) -> list[str]:
     return lines
 
 
+def summarize_proposal(problem: Problem, proposal: Proposal) -> str:
+    """Deterministic English summary from the checked facts (no model call).
+
+    Same facts the model would be given -- session patterns, check
+    counts, shortfalls, notes -- rendered directly. Hosts that enable
+    it skip the slowest call in the loop; team and field names are
+    copied exactly, and nothing can be invented.
+    """
+    lines = [f"{len(proposal.events)} sessions placed."]
+    failed = [c for c in proposal.check_results if not c.passed]
+    lines.append(f"Checks: {len(proposal.check_results) - len(failed)}/{len(proposal.check_results)} passed.")
+    if proposal.events:
+        lines.append("")
+        lines.extend("- " + pattern + "." for pattern in _session_patterns(problem, proposal))
+    if failed:
+        lines.append("")
+        lines.append("Failed checks:")
+        lines.extend(f"- {c.check} on event #{c.event_index}: {c.reason}" for c in failed[:5])
+    if proposal.shortfalls:
+        lines.append("")
+        lines.append("Shortfalls:")
+        lines.append(proposal.shortfall_summary())
+    if proposal.rules.notes:
+        lines.append("")
+        lines.append("Notes: " + "; ".join(proposal.rules.notes))
+    return "\n".join(lines)
+
+
 def explain_proposal(problem: Problem, proposal: Proposal, chat: ChatFn, *, language: str = "en") -> str:
     """Return a short summary of ``proposal`` in ``language``.
 
@@ -95,7 +123,7 @@ def explain_proposal(problem: Problem, proposal: Proposal, chat: ChatFn, *, lang
             "role": "system",
             "content": (
                 "Summarize this youth-club schedule for the manager in "
-                f"{language}. Short plain words, no tactics or analysis. "
+                f"{language}. At most 3 short sentences. Short plain words, no tactics or analysis. "
                 "Copy every team and field name exactly as given (English proper names); "
                 "never translate or transliterate a name. "
                 "The facts below are final; do not invent times or fields."

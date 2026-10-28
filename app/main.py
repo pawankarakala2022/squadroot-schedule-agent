@@ -220,6 +220,8 @@ def mock_route_call(messages: list) -> str:
                      or any(w in low for w in ("today", "tomorrow", "weekend", "next week")))
     if any(w in low for w in cancel_words):
         return "cancel"
+    if "has_calendar=true" in system.lower() and any(w in low for w in ("add", "another", "extra")):
+        return "add"
     # Product rule: weather with no named move target cancels; a move
     # target (move/shift/postpone ... to <date/field>) reschedules.
     import re as _re
@@ -295,6 +297,29 @@ def mock_cancel(messages: list) -> dict:
     return dict(MOCK_CANCEL)
 
 
+MOCK_ADD_GAME = {
+    "requirements": [
+        {
+            "team_alias": "T1",
+            "event_type": "game",
+            "sessions_per_week": 1,
+            "duration_minutes": 60,
+            "allowed_days": [6],
+            "allowed_field_aliases": [],
+            "earliest_start": "17:00",
+            "latest_end": "20:00",
+            "title": "vs Falcons",
+            "active_from": "2026-11-01",
+            "active_until": "2026-11-01",
+        },
+    ],
+    "min_gap_days": 1,
+    "blackout_dates": [],
+    "blackout_ranges": [],
+    "notes": ["Mock mode: one scripted game added, existing sessions kept."],
+}
+
+
 def mock_chat(messages: list, *, response_format=None, usage_out=None) -> str:
     """Scripted stand-in: valid shapes, clearly labelled, no network."""
     if response_format is None:
@@ -304,6 +329,9 @@ def mock_chat(messages: list, *, response_format=None, usage_out=None) -> str:
     if name == "route_intent":
         return json.dumps({"call": mock_route_call(messages), "notes": ["Mock mode: keyword router."]})
     if name == "scheduling_rules":
+        blob = " ".join(str(m.get("content", "")) for m in messages).lower()
+        if "produce only the session(s) this request adds" in blob:
+            return json.dumps(MOCK_ADD_GAME)
         return json.dumps(MOCK_RULES)
     if name == "disruption":
         return json.dumps(mock_disruption(messages))
@@ -370,6 +398,37 @@ def make_chat(mode: str) -> ChatFn:
     raise HTTPException(400, f"Unknown mode {mode!r}; use mock, meta or open.")
 
 
+def _coach_busy() -> list[Busy]:
+    """Tracked coach unavailability as up-front Problem.busy (the SaaS way).
+
+    SquadRoot already tracks this, so the solver knows before the first
+    solve instead of discovering it through a verify re-solve. The mock
+    verify hook below stays as a safety net for busy times learned later.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+
+    tz = ZoneInfo(TZ)
+    start_t = time.fromisoformat(COACH["unavailable_from"])
+    end_t = time.fromisoformat(COACH["unavailable_until"])
+    weekday = int(COACH["unavailable_weekday"])
+    busy: list[Busy] = []
+    day = date.fromisoformat(CLUB["season_start"])
+    last = date.fromisoformat(CLUB["season_end"])
+    while day <= last:
+        if day.weekday() == weekday:
+            for team_id in COACH["teams"]:
+                busy.append(
+                    Busy(
+                        resource=f"team:{team_id}",
+                        start=_dt.combine(day, start_t, tzinfo=tz),
+                        end=_dt.combine(day, end_t, tzinfo=tz),
+                        reason="coach unavailable",
+                    )
+                )
+        day += _td(days=1)
+    return busy
+
+
 def club_problem(extra_busy: list[Busy] | None = None) -> Problem:
     """Rebuild the demo Problem from demo/club.json plus optional game busy."""
     return Problem(
@@ -386,7 +445,7 @@ def club_problem(extra_busy: list[Busy] | None = None) -> Problem:
         season_start=date.fromisoformat(CLUB["season_start"]),
         season_end=date.fromisoformat(CLUB["season_end"]),
         timezone=TZ,
-        busy=list(extra_busy or []),
+        busy=_coach_busy() + list(extra_busy or []),
     )
 
 
@@ -419,7 +478,8 @@ def mock_verify_hook(problem: Problem):  # type: ignore[no-untyped-def]
 def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # type: ignore[no-untyped-def]
     """Run one agent call with the mock coach hook; return proposal + trace."""
     chat = _chat if _chat is not None else make_chat(mode)
-    agent = ScheduleAgent(chat)
+    # Deterministic English summaries: no slow explain model call in the demo.
+    agent = ScheduleAgent(chat, deterministic_summary=True)
     problem = kwargs.pop("problem")
     try:
         if call == "plan":
@@ -433,6 +493,9 @@ def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # t
                                         verify=mock_verify_hook(problem))
         elif call == "cancel":
             proposal = agent.cancel(problem, kwargs["events"], kwargs["request"])
+        elif call == "add":
+            proposal = agent.add(problem, kwargs["events"], kwargs["request"],
+                                 verify=mock_verify_hook(problem))
         elif call == "run":
             proposal = agent.handle(problem, kwargs["request"], proposal=kwargs.get("proposal"),
                                     events=kwargs.get("events"), previous=kwargs.get("previous"),
@@ -507,6 +570,14 @@ def api_cancel(body: dict) -> dict:
                      events=body.get("events", []), request=body.get("request", ""))
 
 
+@app.post("/api/add")
+def api_add(body: dict) -> dict:
+    """Add new session(s) to a saved calendar; existing sessions never move."""
+    problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
+    return run_agent(body.get("mode", "mock"), "add", problem=problem,
+                     events=body.get("events", []), request=body.get("request", ""))
+
+
 @app.post("/api/run")
 def api_run(body: dict) -> dict:
     """Route any wording to the right call (plan/revise/reschedule/cancel) and run it.
@@ -570,6 +641,9 @@ def _stream_kwargs(call: str, body: dict) -> dict:
         return {"problem": problem, "events": body.get("events", []), "request": body.get("request", "")}
     if call == "cancel":
         return {"problem": club_problem(), "events": body.get("events", []), "request": body.get("request", "")}
+    if call == "add":
+        problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
+        return {"problem": problem, "events": body.get("events", []), "request": body.get("request", "")}
     if call == "run":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
         games = body.get("games")
@@ -581,7 +655,7 @@ def _stream_kwargs(call: str, body: dict) -> dict:
         return {"problem": problem, "request": body.get("request", ""),
                 "proposal": body.get("proposal"), "events": body.get("events"),
                 "previous": body.get("previous")}
-    raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule, cancel or run.")
+    raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule, cancel, add or run.")
 
 
 def stream_events(call: str, mode: str, base: ChatFn, kwargs: dict):  # type: ignore[no-untyped-def]
@@ -689,7 +763,7 @@ def voice_result(mode: str, data: bytes, filename: str, mime_type: str | None) -
     if not data:
         raise HTTPException(400, "No audio received.")
     if mode == "mock":
-        return {"transcript": SAMPLE_TRANSCRIPT, "mock": True,
+        return {"transcript": SAMPLE_TRANSCRIPT, "mock": True, "latency_ms": 0,
                 "note": "Mock mode: sample transcript from demo/voice_note.txt."}
     if mode != "meta":
         raise HTTPException(400, "Voice transcription needs the Meta API key (or use Mock mode).")
@@ -699,11 +773,14 @@ def voice_result(mode: str, data: bytes, filename: str, mime_type: str | None) -
         raise HTTPException(400, "Voice needs MODEL_API_KEY in .env (or use Mock mode).")
     from schedule_agent import ModelError
 
+    usage: dict = {}
     try:
-        text = transcribe_audio(config, data, filename=filename, mime_type=mime_type)
+        text = transcribe_audio(config, data, filename=filename, mime_type=mime_type, usage_out=usage)
     except ModelError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"transcript": text, "mock": False}
+    # Surface the split: transcription time vs the agent run that follows.
+    return {"transcript": text, "mock": False,
+            "latency_ms": usage.get("latency_ms"), "model": usage.get("model")}
 
 
 @app.post("/api/voice")

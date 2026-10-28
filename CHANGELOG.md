@@ -1,5 +1,32 @@
 # Changelog
 
+## v4.3.0 (2026-10-28)
+
+Additive, backward compatible (new method, new route value, new opt-in
+constructor flag; nothing removed or reshaped): insert-only adds and
+the aggressive latency path. `ScheduleAgent.add(problem, events,
+request, *, previous=None, verify=None)` freezes every saved session
+and places only the new session(s) the request asks for -- "Add a game
+with Falcons next Sunday" no longer re-plans the whole season, and
+existing sessions stay exactly where they are (shortfalls name what
+could not be added). The router gains the `add` call and
+`ScheduleAgent.handle` dispatches to it (add with no calendar falls
+back to plan; add against a draft extends the draft). A conservative
+English fast path routes unambiguous fresh practice/game requests and
+explicit add requests in code with no model call; cancel/move/weather/
+negation wording and other languages still go to the model.
+`ScheduleAgent(..., deterministic_summary=True)` renders English
+summaries in code from the checked facts, skipping the explain model
+call (other languages keep the model). Live traces motivated this: a
+two-request sample spent 21.5s and 42.1s entirely in route +
+understand + explain model calls (solve/checks 0ms), with understand
+burning 5,828 completion tokens on a follow-up; both sample flows now
+need one model call each (understand only). Demo: coach unavailability
+is passed up front in `Problem.busy` (the SaaS way) instead of being
+discovered by a verify re-solve, `POST /api/add` added, and the voice
+endpoint returns transcription `latency_ms`/`model` so voice time and
+agent time are visible separately.
+
 ## v4.2.1 (2026-10-28)
 
 Performance fix, no name or shape changed and solver/check outputs are
