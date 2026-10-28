@@ -133,7 +133,7 @@ def test_active_window_parsed_and_prompt_has_today() -> None:
     assert req.active_until == date(2026, 11, 3)
     assert req.sessions_per_week == 1
     prompt_text = " ".join(m.get("content", "") for m in calls[0][0] if isinstance(m, dict))
-    assert "Today:" in prompt_text and "next Tuesday" in prompt_text
+    assert "Today is" in prompt_text and "next Tuesday" in prompt_text
 
 
 def test_bad_active_window_dropped_and_reported() -> None:

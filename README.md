@@ -74,6 +74,66 @@ Reading the output:
 Verify: pass `usage_out={}` — voice fills `muse-voice-transcribe-1.0`,
 chat fills `muse-spark-1.3`. Or break one key: the other path keeps working.
 
+## Calling it from a SaaS app
+
+The core is an in-process Python library. A host SaaS installs it from a
+pinned git tag and calls the same public interface the demo app uses.
+
+```python
+from schedule_agent import ModelConfig, chat_fn, ScheduleAgent
+
+config = ModelConfig.from_env()  # META_MODEL_API_BASE + MODEL_API_KEY + META_MODEL
+agent = ScheduleAgent(chat_fn(config))
+
+proposal = agent.handle(
+    problem, request_text,
+    proposal=draft_or_none,
+    events=saved_calendar_or_none,
+    verify=my_verify_hook,  # (events) -> list[Busy]: host-only busy times
+)
+result = agent.approve(proposal)  # human approval; refuses failed checks, applies nothing
+# The host saves result.events through its own permission and conflict checks.
+```
+
+Build `problem` from your own database (`Team(id, name)`, `Field(id, name, ...)`,
+`Busy`, blackout dates, timezone). The model only sees team/field aliases
+(`T1`, `F1`), dates, and request text; private availability reaches the
+deterministic solver only as `Busy` intervals returned by `verify`.
+
+Every call returns a draft `Proposal`: parsed `rules`, placed `events`
+(timezone-aware `ProposedEvent` rows), one `check_results` entry per check per
+event, `shortfalls` with plain-language reasons, a `summary` in the manager's
+language, plus a JSON-safe step log on `agent.last_trace`. `Proposal.to_dict()`
+and `Proposal.from_dict(d)` round-trip exactly, so drafts can live in the
+browser between requests. Related calls are `plan`, `revise`, `reschedule`,
+`cancel`, plus `extract_games`/`games_to_busy` (schedule photos), `transcribe_audio`
+(voice), and `draft_notices` (one family notice per language).
+
+The demo in `app/` is a reference host: it rebuilds the `Problem` from
+fictional `demo/club.json`, uses a scripted mock chat and a mock coach-busy
+`verify` hook, and exposes thin endpoints (`/api/plan`, `/api/revise`,
+`/api/reschedule`, `/api/cancel`, `/api/run`, `/api/approve`, `/api/notices`,
+`/api/voice`, `/api/vision`). A real SaaS replaces five seams and keeps the
+agent calls identical:
+
+| Aspect | Demo app | Real SaaS |
+|---|---|---|
+| Problem source | JSON fixture | Query DB, map to data classes |
+| Model chat | Scripted mock | `chat_fn(ModelConfig.from_env())` |
+| Hidden busy | Mock coach hook | Real `verify` hook |
+| Draft storage | Dicts in browser | Same dicts in own session store |
+| Save | Nothing applied | Own save after `approve()` |
+
+## Dynamic layer notes (v4.2.0) — required reading for hosts
+
+- **Holidays (USA):** call `with_us_holidays(problem)` before planning to block the 11 US federal holidays as blackout dates. Add local/school holidays via `Problem.blackout_dates` or in the request.
+- **Grounds / coach photo:** `extract_availability(problem, image_bytes, chat)` reads a phone screenshot ("field available Tue/Thu 5–8pm; coach unavailable Thursdays"); convert with `availability_to_busy(import, problem)`. Unmatched names are reported, never guessed.
+- **Coach unavailability:** `parse_availability(problem, request_or_transcript, chat)` expands a text/voice note into `Busy` intervals. Unavailability only — never availability, never a coach name. Add the result to `Problem.busy` or return it from `verify`.
+- **Rain default:** rain or a closed field with no named move target cancels. `reschedule` needs a named new date or field ("move Thursday to Friday"). Explicit `reschedule()` calls still move.
+- **Team names stay in English** in every language; never translate or transliterate them. Pass `language="es"` (etc.) to `handle`/`plan`/`revise`/`reschedule`/`cancel` for summaries in the manager's language.
+- **Relative dates** ("next Tue/week/month") are resolved in code in the club timezone; the model only copies concrete dates.
+- **Host still owns:** login, per-club tenant isolation, upload size/type checks, audit log, and the final save-time conflict check. Do not deploy `app/` as the SaaS.
+
 ## License
 
 MIT. See `LICENSE`.

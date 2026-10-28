@@ -1,10 +1,13 @@
 """SquadRoot Schedule Agent core library (no I/O, no web framework)."""
 
 from .agent import ScheduleAgent
+from .availability import AvailabilityParse, parse_availability
 from .cancel import CancelFilter, parse_cancel_filter
+from .dates import problem_date_hints, relative_date_hints, today_in_tz
 from .disruption import Disruption, parse_disruption
 from .errors import AgentError, ModelError
 from .explain import explain_proposal
+from .holidays import holiday_dates, us_federal_holidays, with_us_holidays
 from .llm import ChatFn, ModelConfig, chat_fn
 from .router import Route, parse_route_intent
 from .models import (
@@ -23,10 +26,20 @@ from .models import (
 )
 from .notify import FamilyNotice, FamilyNotices, draft_notices
 from .understand import understand_request
-from .vision import GameImport, ScheduleImport, extract_games, games_to_busy
+from .vision import (
+    AvailabilityImport,
+    CoachUnavailability,
+    GameImport,
+    GroundAvailability,
+    ScheduleImport,
+    availability_to_busy,
+    extract_availability,
+    extract_games,
+    games_to_busy,
+)
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "4.1.0"
+__version__ = "4.2.0"
 
 __all__ = [
     "__version__",
@@ -50,6 +63,19 @@ __all__ = [
     "parse_cancel_filter",
     "Route",
     "parse_route_intent",
+    "today_in_tz",
+    "relative_date_hints",
+    "problem_date_hints",
+    "us_federal_holidays",
+    "holiday_dates",
+    "with_us_holidays",
+    "AvailabilityParse",
+    "parse_availability",
+    "GroundAvailability",
+    "CoachUnavailability",
+    "AvailabilityImport",
+    "extract_availability",
+    "availability_to_busy",
     "ScheduleAgent",
     "ModelConfig",
     "ChatFn",

@@ -1,5 +1,28 @@
 # Changelog
 
+## v4.2.0 (2026-10-28)
+
+Additive, backward compatible (no existing name or shape changed; new
+keyword arguments default to prior behavior): the dynamic layer.
+Code-resolved relative dates (`dates.py`: `today_in_tz`,
+`relative_date_hints`, `problem_date_hints`) now anchor plan, revise,
+reschedule, cancel and routing prompts, so "next Tuesday / next week /
+next month" copy concrete dates in any language. `ScheduleAgent`
+methods accept `language="en"` and thread it to understanding,
+routing, disruption, cancel and explain; team and field names stay
+English proper names, never translated, in every prompt and summary.
+US general holidays (`holidays.py`: `us_federal_holidays`,
+`holiday_dates`, `with_us_holidays`) merge into blackout dates in
+code. Coach unavailability by text or voice transcript
+(`availability.py`: `AvailabilityParse`, `parse_availability`) expands
+to `Busy` intervals (unavailability only, no coach entity). Grounds
+and coach photos/screenshots (`vision.py`: `GroundAvailability`,
+`CoachUnavailability`, `AvailabilityImport`, `extract_availability`,
+`availability_to_busy`) read "field available Tue/Thu 5-8pm" notices
+with exact matching, never guessed. Router rule: rain or a closed
+field with no named move target now routes to cancel; reschedule
+needs a named new date or field (explicit `reschedule()` unchanged).
+
 ## v4.1.0 (2026-10-28)
 
 Additive, backward compatible (no existing name or shape changed): one

@@ -1,4 +1,6 @@
 # Build log
+- 2026-10-28: Dynamic layer v4.2.0: dates.py code-resolved relative dates in all prompts, language= threading with English team names, holidays.py US federal holidays, availability.py coach unavailability -> Busy, vision grounds/coach photo extractor, router rain-no-target -> cancel; 173 pytest tests green. (Muse Code)
+- 2026-10-28: Added README "Calling it from a SaaS app" (library call, Proposal output, demo-vs-SaaS seams); 166 pytest tests green. (Muse Code)
 - 2026-10-27: Cleaned repo root (deleted regenerable pip-*/pytest-of-preet/.pytest_cache leftovers; kept README-referenced manual scripts, voice notes, recorder); 146 pytest tests green. (Muse Code)
 - 2026-10-27: Event-planner dates v4.0.0 (Requirement active_from/active_until, solver windows, understand today + game one-off vs practice recurring, revise context); 146 pytest tests green. (Muse Code)
 - 2026-10-27: Fixed app/.env loading for Meta API mode (shared _load_dotenv allowlist in app/main.py, meta + voice now read .env like open did) + regression test; 142 pytest tests green. (Muse Code)

@@ -18,6 +18,7 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .dates import problem_date_hints
 from .errors import AgentError
 from .llm import ChatFn
 from .models import Problem, ProposedEvent
@@ -170,7 +171,9 @@ def _prompt(
         "You turn a club manager's cancellation request into strict JSON.",
         "Teams (alias: name): " + ", ".join(f"{a}: {team_names[a]}" for a in sorted(team_names)) + ".",
         "Fields (alias: name): " + ", ".join(f"{a}: {field_names[a]}" for a in sorted(field_names)) + ".",
+        "Team and field names are English proper names: match them exactly as written; never translate or transliterate a name in any language.",
         f"Season: {problem.season_start.isoformat()} to {problem.season_end.isoformat()} ({problem.timezone}).",
+        problem_date_hints(problem),
         "Days are 0=Monday..6=Sunday. Dates are YYYY-MM-DD, empty string when the request sets no bound.",
         "event_types copies the request's own session words (e.g. practice, game); empty list when it names none.",
         "Leave every list empty (and both dates empty) ONLY when the request truly cancels the whole calendar.",

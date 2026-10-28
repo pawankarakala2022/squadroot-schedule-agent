@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from datetime import date, time, timedelta
 
+from .dates import problem_date_hints, today_in_tz
 from .errors import AgentError
 from .llm import ChatFn
 from .models import Problem, Requirement, Rules
@@ -96,14 +97,8 @@ def _rules_schema() -> dict:
 
 
 def _today_in_problem_tz(problem: Problem) -> date:
-    """Today's date in the problem timezone (event-planner anchor for "next ...")."""
-    from datetime import datetime as _datetime
-    from zoneinfo import ZoneInfo as _ZoneInfo
-
-    try:
-        return _datetime.now(_ZoneInfo(problem.timezone)).date()
-    except Exception:
-        return problem.season_start
+    """Today's date in the problem timezone (kept for internal callers)."""
+    return today_in_tz(problem)
 
 
 def _prompt(
@@ -113,13 +108,13 @@ def _prompt(
     request: str,
     language: str,
 ) -> list[dict[str, str]]:
-    today = _today_in_problem_tz(problem)
     lines = [
         "You turn a club manager's scheduling request into strict JSON.",
         "Teams (alias: name): " + ", ".join(f"{a}: {team_names[a]}" for a in sorted(team_names)) + ".",
         "Fields (alias: name, hours): " + ", ".join(f"{a}: {field_names[a]}" for a in sorted(field_names)) + ".",
+        "Team and field names are English proper names: match them exactly as written; never translate or transliterate a name in any language.",
         f"Season: {problem.season_start.isoformat()} to {problem.season_end.isoformat()} ({problem.timezone}).",
-        f"Today: {today.isoformat()} ({problem.timezone}). Resolve relative dates against today.",
+        problem_date_hints(problem),
         "Days are 0=Monday..6=Sunday. Times are HH:MM, empty string when unset.",
         "Think like an event planner about dates:",
         "a game is a one-off fixture on one date (sessions_per_week 1 with active_from/active_until set to that date);",

@@ -47,6 +47,8 @@ def explain_proposal(problem: Problem, proposal: Proposal, chat: ChatFn, *, lang
             "content": (
                 "Summarize this youth-club schedule for the manager in "
                 f"{language}. Short plain words, no tactics or analysis. "
+                "Copy every team and field name exactly as given (English proper names); "
+                "never translate or transliterate a name. "
                 "The facts below are final; do not invent times or fields."
             ),
         },

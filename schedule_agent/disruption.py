@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+from .dates import problem_date_hints
 from .errors import AgentError
 from .llm import ChatFn
 from .models import Problem
@@ -140,7 +141,9 @@ def _prompt(problem: Problem, field_names: dict[str, str], request: str, languag
     lines = [
         "You turn a club manager's disruption report (rain, closed fields) into strict JSON.",
         "Fields (alias: name): " + ", ".join(f"{a}: {field_names[a]}" for a in sorted(field_names)) + ".",
+        "Field names are English proper names: match them exactly as written; never translate or transliterate a name in any language.",
         f"Season: {problem.season_start.isoformat()} to {problem.season_end.isoformat()} ({problem.timezone}).",
+        problem_date_hints(problem),
         "Report dates as YYYY-MM-DD. date_to may equal date_from for a single day.",
         "If the request says when moved sessions may go ('next week', 'this weekend',",
         "'not before Monday'), set not_before to that date; empty string when it says nothing about timing.",

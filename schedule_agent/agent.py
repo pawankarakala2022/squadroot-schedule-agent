@@ -195,6 +195,7 @@ class ScheduleAgent:
         *,
         previous: Rules | dict[str, Any] | None = None,
         verify: VerifyHook | None = None,
+        language: str = "en",
     ) -> Proposal:
         """Turn a plain-words request into a checked draft Proposal.
 
@@ -204,8 +205,8 @@ class ScheduleAgent:
         bad request and :class:`ModelError` when the model is down.
         """
         self.last_trace = []
-        rules = self._understand(problem, request, _normalize_previous(previous))
-        return self._finish(problem, rules, verify)
+        rules = self._understand(problem, request, _normalize_previous(previous), language)
+        return self._finish(problem, rules, verify, language)
 
     def revise(
         self,
@@ -214,6 +215,7 @@ class ScheduleAgent:
         request: str,
         *,
         verify: VerifyHook | None = None,
+        language: str = "en",
     ) -> Proposal:
         """New ask against an existing draft; everything else is kept.
 
@@ -228,8 +230,8 @@ class ScheduleAgent:
         if not isinstance(proposal, Proposal):
             raise AgentError("The saved draft could not be read; please start a new request.")
         self.last_trace = []
-        rules = self._understand(problem, request, proposal.rules)
-        return self._finish(problem, rules, verify)
+        rules = self._understand(problem, request, proposal.rules, language)
+        return self._finish(problem, rules, verify, language)
 
     def approve(self, proposal: Proposal | dict[str, Any]) -> ApplyResult:
         """Record a human's approval of a checked draft. The only path to an approval.
@@ -280,6 +282,7 @@ class ScheduleAgent:
         verify: VerifyHook | None = None,
         not_before: date | str | None = None,
         allowed_fields: list[str] | None = None,
+        language: str = "en",
     ) -> Proposal:
         """Move only the sessions hit by a disruption (rain, closed fields).
 
@@ -306,7 +309,9 @@ class ScheduleAgent:
         """
         self.last_trace = []
         current = self._coerce_events(events)
-        disruption = parse_disruption(problem, request, self._traced(self._chat, "disruption", self._chat_usage))
+        disruption = parse_disruption(
+            problem, request, self._traced(self._chat, "disruption", self._chat_usage), language=language
+        )
         closed = disruption.closed_ids(problem)
         host_before = self._coerce_date(not_before, "not_before")
         pin_fields, dropped_fields = self._coerce_allowed_fields(problem, allowed_fields)
@@ -340,7 +345,7 @@ class ScheduleAgent:
             }
         )
         return self._finish_reschedule(
-            problem, current, disruption, closed, verify, window_start, pin_fields, pin_notes
+            problem, current, disruption, closed, verify, window_start, pin_fields, pin_notes, language
         )
 
     def cancel(
@@ -348,6 +353,8 @@ class ScheduleAgent:
         problem: Problem,
         events: list[ProposedEvent] | list[dict[str, Any]],
         request: str,
+        *,
+        language: str = "en",
     ) -> Proposal:
         """Cancel the saved sessions matching a plain-words request.
 
@@ -368,7 +375,9 @@ class ScheduleAgent:
         """
         self.last_trace = []
         current = self._coerce_events(events)
-        filt = parse_cancel_filter(problem, request, self._traced(self._chat, "cancel_filter", self._chat_usage))
+        filt = parse_cancel_filter(
+            problem, request, self._traced(self._chat, "cancel_filter", self._chat_usage), language=language
+        )
         if not filt.is_selective:
             raise AgentError("Please say which sessions to cancel (team, day or date).")
         cancelled = sorted(
@@ -405,7 +414,7 @@ class ScheduleAgent:
             {"step": "checks", "round": 0, "results": len(results), "failed": sum(1 for c in results if not c.passed)}
         )
         proposal = Proposal(rules=rules, events=kept, check_results=results, shortfalls=[])
-        proposal.summary = "\n".join(lines) + "\n" + self._explain(problem, proposal)
+        proposal.summary = "\n".join(lines) + "\n" + self._explain(problem, proposal, language)
         return proposal
 
     def handle(
@@ -419,6 +428,7 @@ class ScheduleAgent:
         verify: VerifyHook | None = None,
         not_before: date | str | None = None,
         allowed_fields: list[str] | None = None,
+        language: str = "en",
     ) -> Proposal:
         """Route any scheduling request to the right call and run it.
 
@@ -453,29 +463,32 @@ class ScheduleAgent:
             self._traced(self._chat, "route", self._chat_usage),
             has_proposal=draft is not None,
             has_events=bool(current),
+            language=language,
+            problem=problem,
         )
         routed = list(self.last_trace)
         if route.call == "cancel":
             if not current:
                 raise AgentError("There is no calendar yet — set one first (plan), then cancel sessions.")
-            out = self.cancel(problem, current, request)
+            out = self.cancel(problem, current, request, language=language)
         elif route.call == "reschedule":
             if not current:
                 raise AgentError("There is no calendar yet — set one first (plan), then move sessions.")
             out = self.reschedule(
-                problem, current, request, verify=verify, not_before=not_before, allowed_fields=allowed_fields
+                problem, current, request, verify=verify, not_before=not_before,
+                allowed_fields=allowed_fields, language=language,
             )
         elif route.call == "revise":
             if draft is None:
                 base = _normalize_previous(previous)
-                out = self.plan(problem, request, previous=base, verify=verify)
+                out = self.plan(problem, request, previous=base, verify=verify, language=language)
             else:
-                out = self.revise(problem, draft, request, verify=verify)
+                out = self.revise(problem, draft, request, verify=verify, language=language)
         else:
             base = _normalize_previous(previous)
             if base is None and draft is not None:
                 base = draft.rules
-            out = self.plan(problem, request, previous=base, verify=verify)
+            out = self.plan(problem, request, previous=base, verify=verify, language=language)
         self.last_trace = routed + self.last_trace
         return out
 
@@ -538,6 +551,7 @@ class ScheduleAgent:
         window_start: date,
         pin_fields: list[str] | None,
         pin_notes: list[str],
+        language: str = "en",
     ) -> Proposal:
         """Freeze kept events, re-place hit sessions, verify (max 3 rounds), explain."""
         tz = ZoneInfo(problem.timezone)
@@ -583,7 +597,7 @@ class ScheduleAgent:
             )
             if not new or rounds >= MAX_VERIFY_ROUNDS:
                 proposal = Proposal(rules=rules, events=ordered, check_results=results, shortfalls=shortfalls)
-                proposal.summary = self._moves_summary(problem, moves) + "\n" + self._explain(checking, proposal)
+                proposal.summary = self._moves_summary(problem, moves) + "\n" + self._explain(checking, proposal, language)
                 return proposal
             for busy in new:
                 seen.add((busy.resource, busy.start, busy.end))
@@ -748,7 +762,7 @@ class ScheduleAgent:
 
         return chat
 
-    def _understand(self, problem: Problem, request: str, previous: Rules | None) -> Rules:
+    def _understand(self, problem: Problem, request: str, previous: Rules | None, language: str = "en") -> Rules:
         """Run request text (+ optional previous-rules context) through the model."""
         text = request
         if previous is not None:
@@ -759,7 +773,9 @@ class ScheduleAgent:
                 + context
                 + ". Produce complete new rules; the new request may modify the previous plan."
             )
-        rules = understand_request(problem, text, self._traced(self._chat, "understand", self._chat_usage))
+        rules = understand_request(
+            problem, text, self._traced(self._chat, "understand", self._chat_usage), language=language
+        )
         self.last_trace.append(
             {
                 "step": "rules",
@@ -770,7 +786,7 @@ class ScheduleAgent:
         )
         return rules
 
-    def _finish(self, problem: Problem, rules: Rules, verify: VerifyHook | None) -> Proposal:
+    def _finish(self, problem: Problem, rules: Rules, verify: VerifyHook | None, language: str = "en") -> Proposal:
         """Solve, check, re-solve on host busy times (max 3 rounds), explain."""
         working_busy = list(problem.busy)
         seen = {(b.resource, b.start, b.end) for b in working_busy}
@@ -810,7 +826,7 @@ class ScheduleAgent:
                     check_results=results,
                     shortfalls=draft.shortfalls,
                 )
-                proposal.summary = self._explain(working, proposal)
+                proposal.summary = self._explain(working, proposal, language)
                 return proposal
             for busy in new:
                 seen.add((busy.resource, busy.start, busy.end))
@@ -838,6 +854,8 @@ class ScheduleAgent:
                 raise AgentError("The availability check returned something unusable; please try again.")
         return out
 
-    def _explain(self, problem: Problem, proposal: Proposal) -> str:
+    def _explain(self, problem: Problem, proposal: Proposal, language: str = "en") -> str:
         """Summarize the checked proposal via the explain chat."""
-        return explain_proposal(problem, proposal, self._traced(self._explain_chat, "explain", self._explain_usage))
+        return explain_proposal(
+            problem, proposal, self._traced(self._explain_chat, "explain", self._explain_usage), language=language
+        )

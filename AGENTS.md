@@ -82,6 +82,7 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
    - Vision: `GameImport`, `ScheduleImport`, `extract_games(problem, image_bytes, chat, *, mime_type="image/png") -> ScheduleImport`, `games_to_busy(schedule, problem, *, duration_minutes=60) -> list[Busy]`.
   - Notify: `FamilyNotice`, `FamilyNotices`, `draft_notices(problem, events, chat, *, languages=[...]) -> FamilyNotices` (one drafted notice per family language; every draft must echo each team name, date, time and field name exactly, one repair retry, gaps reported not silently sent).
   - Router: `Route`, `parse_route_intent(request, chat, *, has_proposal=False, has_events=False) -> Route` (model picks one of plan/revise/reschedule/cancel; strict json_schema, one repair retry, then fail safely).
+  - Dynamic layer (v4.2.0): `today_in_tz(problem)`, `relative_date_hints(today)`, `problem_date_hints(problem)` (code-resolved "next Tue/week/month" copied by the model in any language); `us_federal_holidays(year)`, `holiday_dates(start, end)`, `with_us_holidays(problem)` (US general holidays merged as blackouts by the host); `AvailabilityParse`, `parse_availability(problem, request, chat) -> AvailabilityParse` (coach unavailability text/transcript -> `Busy`, never availability, no coach entity); `GroundAvailability`, `CoachUnavailability`, `AvailabilityImport`, `extract_availability(problem, image_bytes, chat) -> AvailabilityImport`, `availability_to_busy(import, problem) -> list[Busy]` (grounds/coach photo or screenshot, exact matching). Agent methods accept `language="en"`; team/field names stay in English, never translated. Rain with no named move target routes to cancel; `reschedule` needs a named new date/field.
    - Errors: `AgentError` (bad request / could not understand, safe to show the manager),
      `ModelError` (provider failure, safe to show as "assistant unavailable").
 3. **Ids are opaque strings owned by the host** (SquadRoot uses UUIDs). Never parse them. Aliases
@@ -121,6 +122,9 @@ schedule_agent/
   explain.py      Plan -> summary in the manager's language
   voice.py        audio -> text (Muse Voice Transcribe)
   vision.py       photo / PDF of a schedule -> events (Muse Spark multimodal)
+  dates.py        code-resolved relative dates for prompts
+  holidays.py     US federal holidays -> blackout dates (host opt-in)
+  availability.py coach unavailability text/transcript -> Busy
   notify.py       family notice drafts per language
   agent.py        the loop: understand -> solve -> check -> repair -> explain -> await approval
 app/              FastAPI demo + static/index.html

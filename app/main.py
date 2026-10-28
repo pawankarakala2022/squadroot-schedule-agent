@@ -214,11 +214,19 @@ def mock_route_call(messages: list) -> str:
     text = _mock_request_text(messages)
     low = text.lower()
     cancel_words = ("cancel", "drop", "remove", "delete", "call off", "called off", "scrap")
-    move_words = ("rain", "flood", "storm", "closed", "closure", "postpone", "reschedul", "shift", "push back")
+    weather_words = ("rain", "flood", "storm", "closed", "closure")
+    move_words = ("postpone", "reschedul", "shift", "push back")
     has_date = bool(_mock_iso_dates(text) or _mock_weekdays(text)
                      or any(w in low for w in ("today", "tomorrow", "weekend", "next week")))
     if any(w in low for w in cancel_words):
         return "cancel"
+    # Product rule: weather with no named move target cancels; a move
+    # target (move/shift/postpone ... to <date/field>) reschedules.
+    import re as _re
+
+    has_move_target = bool(_re.search(r"\b(move|shift|postpone|reschedule)\b[^.]*\bto\b", low))
+    if any(w in low for w in weather_words):
+        return "reschedule" if has_move_target else "cancel"
     if any(w in low for w in move_words) or ("move" in low and has_date):
         return "reschedule"
     if "move" in low or "field" in low or "ground" in low or any(
