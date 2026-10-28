@@ -25,6 +25,7 @@ from .cancel import CancelFilter, parse_cancel_filter
 from .checks import run_checks
 from .disruption import Disruption, parse_disruption
 from .errors import AgentError
+from .router import parse_route_intent
 from .explain import explain_proposal
 from .llm import ChatFn
 from .models import ApplyResult, Busy, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
@@ -406,6 +407,77 @@ class ScheduleAgent:
         proposal = Proposal(rules=rules, events=kept, check_results=results, shortfalls=[])
         proposal.summary = "\n".join(lines) + "\n" + self._explain(problem, proposal)
         return proposal
+
+    def handle(
+        self,
+        problem: Problem,
+        request: str,
+        *,
+        proposal: Proposal | dict[str, Any] | None = None,
+        events: list[ProposedEvent] | list[dict[str, Any]] | None = None,
+        previous: Rules | dict[str, Any] | None = None,
+        verify: VerifyHook | None = None,
+        not_before: date | str | None = None,
+        allowed_fields: list[str] | None = None,
+    ) -> Proposal:
+        """Route any scheduling request to the right call and run it.
+
+        The model picks one of plan / revise / reschedule / cancel from
+        the request wording plus what the host already has (a draft
+        ``proposal``? saved calendar ``events``?). Code validates the
+        choice and dispatches to the matching method, so the host app
+        needs only this one entry point. ``previous`` (a Rules or its
+        dict) gives plan continuity; when a draft proposal is passed
+        without ``previous``, its rules are reused as the previous
+        context. Missing context fails safely: cancel/reschedule with
+        no calendar asks for a plan first; revise with no draft falls
+        back to a fresh plan.
+        """
+        self.last_trace = []
+        current: list[ProposedEvent] | None = None
+        if events is not None:
+            current = self._coerce_events(events)
+        draft: Proposal | None = None
+        if proposal is not None:
+            if isinstance(proposal, dict):
+                try:
+                    draft = Proposal.from_dict(proposal)
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise AgentError("The saved draft could not be read; please start a new request.") from exc
+            elif isinstance(proposal, Proposal):
+                draft = proposal
+            else:
+                raise AgentError("The saved draft could not be read; please start a new request.")
+        route = parse_route_intent(
+            request if isinstance(request, str) else "",
+            self._traced(self._chat, "route", self._chat_usage),
+            has_proposal=draft is not None,
+            has_events=bool(current),
+        )
+        routed = list(self.last_trace)
+        if route.call == "cancel":
+            if not current:
+                raise AgentError("There is no calendar yet — set one first (plan), then cancel sessions.")
+            out = self.cancel(problem, current, request)
+        elif route.call == "reschedule":
+            if not current:
+                raise AgentError("There is no calendar yet — set one first (plan), then move sessions.")
+            out = self.reschedule(
+                problem, current, request, verify=verify, not_before=not_before, allowed_fields=allowed_fields
+            )
+        elif route.call == "revise":
+            if draft is None:
+                base = _normalize_previous(previous)
+                out = self.plan(problem, request, previous=base, verify=verify)
+            else:
+                out = self.revise(problem, draft, request, verify=verify)
+        else:
+            base = _normalize_previous(previous)
+            if base is None and draft is not None:
+                base = draft.rules
+            out = self.plan(problem, request, previous=base, verify=verify)
+        self.last_trace = routed + self.last_trace
+        return out
 
     @staticmethod
     def _coerce_date(value: date | datetime | str | None, name: str) -> date | None:

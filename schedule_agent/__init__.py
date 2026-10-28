@@ -6,6 +6,7 @@ from .disruption import Disruption, parse_disruption
 from .errors import AgentError, ModelError
 from .explain import explain_proposal
 from .llm import ChatFn, ModelConfig, chat_fn
+from .router import Route, parse_route_intent
 from .models import (
     ApplyResult,
     Busy,
@@ -25,7 +26,7 @@ from .understand import understand_request
 from .vision import GameImport, ScheduleImport, extract_games, games_to_busy
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "4.0.0"
+__version__ = "4.1.0"
 
 __all__ = [
     "__version__",
@@ -47,6 +48,8 @@ __all__ = [
     "parse_disruption",
     "CancelFilter",
     "parse_cancel_filter",
+    "Route",
+    "parse_route_intent",
     "ScheduleAgent",
     "ModelConfig",
     "ChatFn",

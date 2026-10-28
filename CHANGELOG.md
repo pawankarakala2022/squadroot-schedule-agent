@@ -1,5 +1,19 @@
 # Changelog
 
+## v4.1.0 (2026-10-28)
+
+Additive, backward compatible (no existing name or shape changed): one
+entry point for any wording. `Route` + `parse_route_intent(request,
+chat)` (model picks plan / revise / reschedule / cancel from the request
+plus has_proposal / has_calendar context; strict json_schema, one repair
+retry) and `ScheduleAgent.handle(problem, request, *, proposal=None,
+events=None, previous=None, verify=None, ...)`: routes then dispatches to
+the matching call. Cancel/reschedule with no calendar fail safely ("no
+calendar yet"); revise with no draft falls back to plan. Demo: `POST
+/api/run` plus a Smart Run button (streamed steps included); mock mode
+reads explicit dates/teams/fields out of the request so moves like
+10/29 -> 10/30 work offline.
+
 ## v4.0.0 (2026-10-27)
 
 Breaking (Requirement shape grew, old dicts still parse): event-planner

@@ -153,18 +153,154 @@ MOCK_GAMES = {
 }
 
 
+def _mock_request_text(messages: list) -> str:
+    """Last user message text (the request), lowercased for keyword scans."""
+    text = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
+    return str(text)
+
+
+def _mock_iso_dates(text: str) -> list[str]:
+    """Deterministic date reader for mock mode: ISO, M/D and Month-name D.
+
+    Offline stand-in for the model reading dates out of a request; always
+    returns YYYY-MM-DD strings in request order. Yearless dates assume 2026.
+    """
+    import re
+
+    found: list[str] = []
+    for match in re.finditer(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", text):
+        found.append(f"{int(match.group(1)):04d}-{int(match.group(2)):02d}-{int(match.group(3)):02d}")
+    for match in re.finditer(r"\b(\d{1,2})[/-](\d{1,2})\b", text):
+        month, day = int(match.group(1)), int(match.group(2))
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            found.append(f"2026-{month:02d}-{day:02d}")
+    months = {
+        "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+        "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+        "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+    }
+    for match in re.finditer(r"\b([A-Za-z]+)\s+(\d{1,2})\b", text):
+        month = months.get(match.group(1).lower())
+        day = int(match.group(2))
+        if month and 1 <= day <= 31:
+            found.append(f"2026-{month:02d}-{day:02d}")
+    seen: set[str] = set()
+    ordered = [d for d in found if not (d in seen or seen.add(d))]  # type: ignore[func-returns-value]
+    return ordered
+
+
+def _mock_weekdays(text: str) -> list[int]:
+    """Weekday numbers (0=Monday) named in the request, in first-seen order."""
+    import re
+
+    names = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6,
+        "mon": 0, "tue": 1, "tues": 1, "wed": 2, "thu": 3, "thur": 3, "thurs": 3,
+        "fri": 4, "sat": 5, "sun": 6,
+    }
+    days: list[int] = []
+    for match in re.finditer(r"[A-Za-z]+", text.lower()):
+        day = names.get(match.group(0))
+        if day is not None and day not in days:
+            days.append(day)
+    return days
+
+
+def mock_route_call(messages: list) -> str:
+    """Keyword router for mock mode: same wording rules in every run, no network."""
+    system = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
+    text = _mock_request_text(messages)
+    low = text.lower()
+    cancel_words = ("cancel", "drop", "remove", "delete", "call off", "called off", "scrap")
+    move_words = ("rain", "flood", "storm", "closed", "closure", "postpone", "reschedul", "shift", "push back")
+    has_date = bool(_mock_iso_dates(text) or _mock_weekdays(text)
+                     or any(w in low for w in ("today", "tomorrow", "weekend", "next week")))
+    if any(w in low for w in cancel_words):
+        return "cancel"
+    if any(w in low for w in move_words) or ("move" in low and has_date):
+        return "reschedule"
+    if "move" in low or "field" in low or "ground" in low or any(
+        w in low for w in ("revise", "change", "instead", "twice", "add session", "keep", "confirm")
+    ):
+        if "has_proposal=true" in system.lower():
+            return "revise"
+        return "plan"
+    if "has_calendar=true" in system.lower() and has_date:
+        return "reschedule"
+    return "plan"
+
+
+def mock_disruption(messages: list) -> dict:
+    """Request-aware mock disruption: explicit dates/fields win, else the Nov 12 demo."""
+    text = _mock_request_text(messages)
+    dates = _mock_iso_dates(text)
+    if not dates:
+        return dict(MOCK_DISRUPTION)
+    low = text.lower()
+    aliases: list[str] = []
+    if "north" in low:
+        aliases.append("F1")
+    if "south" in low:
+        aliases.append("F2")
+    all_fields = not aliases
+    not_before = ""
+    if len(dates) >= 2 and any(w in low for w in (" to ", "->", "or later", "not before", "after")):
+        not_before = dates[-1]
+    return {
+        "date_from": dates[0],
+        "date_to": dates[0],
+        "closed_field_aliases": aliases,
+        "all_fields": all_fields,
+        "search_days": 7,
+        "not_before": not_before,
+        "notes": ["Mock mode: dates/fields read from your request, no model call."],
+    }
+
+
+def mock_cancel(messages: list) -> dict:
+    """Request-aware mock cancel filter: names/days/dates in the request win."""
+    text = _mock_request_text(messages)
+    low = text.lower()
+    teams = [t for t in ("T1", "T2") if t.lower() in low]
+    for alias, name in (("T1", "foxes"), ("T2", "badgers")):
+        if name in low and alias not in teams:
+            teams.append(alias)
+    weekdays = _mock_weekdays(text)
+    dates = _mock_iso_dates(text)
+    types: list[str] = []
+    if "practice" in low:
+        types.append("practice")
+    elif "game" in low:
+        types.append("game")
+    if teams or weekdays or dates or types:
+        return {
+            "team_aliases": sorted(teams),
+            "field_aliases": [],
+            "weekdays": weekdays,
+            "date_from": dates[0] if dates else "",
+            "date_to": dates[0] if dates else "",
+            "event_types": types,
+            "notes": ["Mock mode: filter read from your request, no model call."],
+        }
+    return dict(MOCK_CANCEL)
+
+
 def mock_chat(messages: list, *, response_format=None, usage_out=None) -> str:
     """Scripted stand-in: valid shapes, clearly labelled, no network."""
     if response_format is None:
         user_text = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
         return "Mock summary: " + str(user_text)[:400]
     name = response_format["json_schema"]["name"]
+    if name == "route_intent":
+        return json.dumps({"call": mock_route_call(messages), "notes": ["Mock mode: keyword router."]})
     if name == "scheduling_rules":
         return json.dumps(MOCK_RULES)
     if name == "disruption":
-        return json.dumps(MOCK_DISRUPTION)
+        return json.dumps(mock_disruption(messages))
     if name == "cancel_filter":
-        return json.dumps(MOCK_CANCEL)
+        return json.dumps(mock_cancel(messages))
     if name == "family_notices":
         system = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
         marker = "Languages: "
@@ -289,6 +425,10 @@ def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # t
                                         verify=mock_verify_hook(problem))
         elif call == "cancel":
             proposal = agent.cancel(problem, kwargs["events"], kwargs["request"])
+        elif call == "run":
+            proposal = agent.handle(problem, kwargs["request"], proposal=kwargs.get("proposal"),
+                                    events=kwargs.get("events"), previous=kwargs.get("previous"),
+                                    verify=mock_verify_hook(problem))
         else:
             raise HTTPException(400, f"Unknown call {call!r}.")
     except HTTPException:
@@ -359,7 +499,29 @@ def api_cancel(body: dict) -> dict:
                      events=body.get("events", []), request=body.get("request", ""))
 
 
+@app.post("/api/run")
+def api_run(body: dict) -> dict:
+    """Route any wording to the right call (plan/revise/reschedule/cancel) and run it.
+
+    One entry point for the app: send the request plus whatever the host
+    already has (proposal draft and/or saved calendar events) and the
+    router picks the call. Plan-first safety applies: cancel/reschedule
+    with no calendar fails with "no calendar yet".
+    """
+    problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
+    games = body.get("games")
+    if games:
+        problem = club_problem(
+            [Busy.from_dict(b) for b in body.get("extra_busy", [])]
+            + games_to_busy(ScheduleImport.from_dict(games), problem)
+        )
+    return run_agent(body.get("mode", "mock"), "run", problem=problem,
+                     request=body.get("request", ""), proposal=body.get("proposal"),
+                     events=body.get("events"), previous=body.get("previous"))
+
+
 _STREAM_LABELS = {
+    "route_intent": "Routing the request",
     "scheduling_rules": "Understanding the request",
     "disruption": "Reading the disruption",
     "cancel_filter": "Reading the cancellation",
@@ -382,7 +544,7 @@ def _stream_label(response_format: object) -> str:
 
 
 def _stream_kwargs(call: str, body: dict) -> dict:
-    """run_agent kwargs for a stream call; mirrors the /api/plan|revise|reschedule|cancel bodies."""
+    """run_agent kwargs for a stream call; mirrors the /api/plan|revise|reschedule|cancel|run bodies."""
     if call == "plan":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
         games = body.get("games")
@@ -400,7 +562,18 @@ def _stream_kwargs(call: str, body: dict) -> dict:
         return {"problem": problem, "events": body.get("events", []), "request": body.get("request", "")}
     if call == "cancel":
         return {"problem": club_problem(), "events": body.get("events", []), "request": body.get("request", "")}
-    raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule or cancel.")
+    if call == "run":
+        problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
+        games = body.get("games")
+        if games:
+            problem = club_problem(
+                [Busy.from_dict(b) for b in body.get("extra_busy", [])]
+                + games_to_busy(ScheduleImport.from_dict(games), problem)
+            )
+        return {"problem": problem, "request": body.get("request", ""),
+                "proposal": body.get("proposal"), "events": body.get("events"),
+                "previous": body.get("previous")}
+    raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule, cancel or run.")
 
 
 def stream_events(call: str, mode: str, base: ChatFn, kwargs: dict):  # type: ignore[no-untyped-def]
@@ -453,9 +626,9 @@ def stream_events(call: str, mode: str, base: ChatFn, kwargs: dict):  # type: ig
 def api_stream(body: dict):  # type: ignore[no-untyped-def]
     """Stream an agent call as server-sent events: step start/done, then the result.
 
-    Same work as /api/plan|revise|reschedule|cancel (body adds "call"), but the
-    page can show each model call starting and finishing instead of one frozen
-    wait.
+    Same work as /api/plan|revise|reschedule|cancel|run (body adds "call"),
+    but the page can show each model call starting and finishing instead of
+    one frozen wait.
     """
     call = body.get("call", "plan")
     mode = body.get("mode", "mock")
