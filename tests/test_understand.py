@@ -1,7 +1,7 @@
 """Understand tests: aliases, validation, one repair retry (fake chat, no network)."""
 
 import json
-from datetime import date, time
+from datetime import date, time, timedelta
 
 import pytest
 
@@ -173,3 +173,42 @@ def test_unusable_shape_after_retry_raises_agent_error() -> None:
 
     with pytest.raises(AgentError):
         understand_request(_problem(), "do something", chat)
+
+
+def test_en_blackout_range_expands_and_canonicalizes() -> None:
+    from evals.cases import CASES
+    from evals.runner import rules_accuracy
+
+    case = next(c for c in CASES if c.id == "en-blackout")
+    assert case.expected is not None
+    req = dict(
+        _good_req(),
+        team_alias="T1",
+        event_type="practice",
+        sessions_per_week=1,
+        duration_minutes=60,
+        allowed_days=[0],
+        allowed_field_aliases=["F1", "F2"],
+        earliest_start="17:00",
+        latest_end="",
+        title="",
+        active_from="",
+        active_until="",
+    )
+    body = _payload(
+        [req],
+        min_gap_days=1,
+        blackout_dates=[],
+        blackout_ranges=[{"from": "2026-11-16", "until": "2026-11-22"}],
+    )
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        return body
+
+    rules = understand_request(case.problem, case.request, chat)
+    (got,) = rules.requirements
+    assert got.allowed_fields == []
+    assert got.earliest_start == time(17, 0)
+    assert got.latest_end == time(20, 0)
+    assert rules.blackout_dates == [date(2026, 11, 16) + timedelta(days=i) for i in range(7)]
+    assert rules_accuracy(rules, case.expected) == 1.0

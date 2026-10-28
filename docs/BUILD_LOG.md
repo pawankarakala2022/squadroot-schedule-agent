@@ -27,3 +27,4 @@ One line per piece of work: date (ET), what was built, who / what wrote it.
 - 2026-10-26: Voice m4a rejected by server (MP4/M4A/AAC enums + rate hint all "Malformed request"); shipped WAV-only note + record_voice_note.html (16 kHz mono WAV recorder) so --voice works. (Muse Code)
 - 2026-10-26: First real-speech transcription live: user's my_note.wav via record_voice_note.html returned text through transcribe_audio; full phase 5 manual check green incl. live. (Muse Code)
 - 2026-10-26: README documents manual voice verification (reading the output, transcript goes nowhere yet, two model clients + how to tell apart). (Muse Code)
+- 2026-10-28: understand_request prompt defaults + blackout_ranges schema/expansion (max 92d) + _canonicalize (every-field to [], shared field hours fill window); en-blackout regression test; 147 pytest green, live eval mean rule accuracy 0.60 -> 1.00. (Muse Code)
