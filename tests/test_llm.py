@@ -119,6 +119,22 @@ def test_chat_network_error_is_model_error(monkeypatch: pytest.MonkeyPatch) -> N
         chat_fn(_config())([{"role": "user", "content": "hi"}])
 
 
+def test_chat_reuses_one_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One chat_fn keeps a single pooled client: no TCP+TLS handshake per call."""
+    built = {"n": 0}
+    real_factory = _factory(_ok("hi"))
+
+    def counting(*args, **kwargs):  # type: ignore[no-untyped-def]
+        built["n"] += 1
+        return real_factory(*args, **kwargs)
+
+    monkeypatch.setattr(llm.httpx, "Client", counting)
+    chat = chat_fn(_config())
+    assert chat([{"role": "user", "content": "hi"}]) == "hi"
+    assert chat([{"role": "user", "content": "hi"}]) == "hi"
+    assert built["n"] == 1
+
+
 def test_chat_bad_shape_and_empty_are_model_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         llm.httpx, "Client", _factory(lambda request: httpx.Response(200, json={"nope": True}))

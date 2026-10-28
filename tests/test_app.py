@@ -15,15 +15,19 @@ from fastapi import HTTPException
 import app.main as app_main
 from app.main import (
     CLUB,
+    _stream_kwargs,
     api_approve,
     api_cancel,
     api_notices,
     api_plan,
     api_reschedule,
     api_revise,
+    api_stream,
     get_club,
     index,
     make_chat,
+    mock_chat,
+    stream_events,
     vision_result,
     voice_result,
 )
@@ -83,6 +87,37 @@ def test_cancel_flow() -> None:
     )["proposal"]
     assert len(cancelled["events"]) < len(proposal["events"])
     assert "Cancelled" in cancelled["summary"]
+
+
+def _collect_stream(body: dict) -> list:
+    """Drive the stream event generator directly: threads + queue only, no sockets."""
+    call = body.get("call", "plan")
+    return list(stream_events(call, body.get("mode", "mock"), mock_chat, _stream_kwargs(call, body)))
+
+
+def test_stream_endpoint_is_event_stream() -> None:
+    response = api_stream({"mode": "mock", "call": "plan", "request": PRESETS["plan_request"]})
+    assert response.media_type == "text/event-stream"
+
+
+def test_stream_plan_emits_steps_then_result() -> None:
+    events = _collect_stream({"mode": "mock", "call": "plan", "request": PRESETS["plan_request"]})
+    assert events and events[0]["type"] == "step" and events[0]["phase"] == "start"
+    assert events[-1]["type"] == "result"
+    assert events[-1]["proposal"]["events"], "streamed mock plan must place sessions"
+    labels = [e["label"] for e in events if e["type"] == "step" and e["phase"] == "done"]
+    assert labels == ["Understanding the request", "Explaining the summary"]
+    assert all(isinstance(e["latency_ms"], int) for e in events if e.get("phase") == "done")
+
+
+def test_stream_cancel_error_is_an_event() -> None:
+    events = _collect_stream({"mode": "mock", "call": "cancel", "events": [], "request": "x"})
+    assert events[-1]["type"] == "error" and events[-1]["detail"]
+
+
+def test_stream_rejects_unknown_call() -> None:
+    with pytest.raises(HTTPException):
+        _collect_stream({"mode": "mock", "call": "dance", "request": "x"})
 
 
 def test_mock_voice_and_vision() -> None:

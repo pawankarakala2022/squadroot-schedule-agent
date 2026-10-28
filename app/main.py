@@ -12,12 +12,16 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import threading
+from collections.abc import Callable
 from datetime import date, datetime, time
+from time import monotonic
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from schedule_agent import (
     Busy,
     ChatFn,
@@ -183,6 +187,22 @@ def mock_chat(messages: list, *, response_format=None, usage_out=None) -> str:
     return "Mock reply."
 
 
+_CHAT_CACHE: dict[tuple, ChatFn] = {}
+_CHAT_LOCK = threading.Lock()
+
+
+def _cached_chat(key: tuple, build: Callable[[], ChatFn]) -> ChatFn:
+    """One chat (and its pooled HTTP client) per mode+credentials, shared across requests."""
+    chat = _CHAT_CACHE.get(key)
+    if chat is None:
+        with _CHAT_LOCK:
+            chat = _CHAT_CACHE.get(key)
+            if chat is None:
+                chat = build()
+                _CHAT_CACHE[key] = chat
+    return chat
+
+
 def make_chat(mode: str) -> ChatFn:
     """Chat function for a UI mode; 400 when the mode needs a missing key."""
     if mode == "mock":
@@ -192,7 +212,8 @@ def make_chat(mode: str) -> ChatFn:
         config = ModelConfig.from_env()
         if config is None:
             raise HTTPException(400, "Meta API mode needs MODEL_API_KEY in .env (or use Mock mode).")
-        return chat_fn(config)
+        return _cached_chat(("meta", config.base_url, config.model, config.api_key),
+                            lambda: chat_fn(config))
     if mode == "open":
         _load_dotenv()
         base = os.environ.get("OPEN_MODEL_API_BASE", "")
@@ -200,7 +221,8 @@ def make_chat(mode: str) -> ChatFn:
         model = os.environ.get("OPEN_MODEL", "") or "meta-models/muse-spark-open-1026"
         if not base or not key:
             raise HTTPException(400, "Open-weights mode needs OPEN_MODEL_API_BASE/KEY in .env (or use Mock mode).")
-        return chat_fn(ModelConfig(base_url=base, model=model, api_key=key))
+        return _cached_chat(("open", base, model, key),
+                            lambda: chat_fn(ModelConfig(base_url=base, model=model, api_key=key)))
     raise HTTPException(400, f"Unknown mode {mode!r}; use mock, meta or open.")
 
 
@@ -250,9 +272,9 @@ def mock_verify_hook(problem: Problem):  # type: ignore[no-untyped-def]
     return hook
 
 
-def run_agent(mode: str, call: str, **kwargs):  # type: ignore[no-untyped-def]
+def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # type: ignore[no-untyped-def]
     """Run one agent call with the mock coach hook; return proposal + trace."""
-    chat = make_chat(mode)
+    chat = _chat if _chat is not None else make_chat(mode)
     agent = ScheduleAgent(chat)
     problem = kwargs.pop("problem")
     try:
@@ -335,6 +357,116 @@ def api_cancel(body: dict) -> dict:
     problem = club_problem()
     return run_agent(body.get("mode", "mock"), "cancel", problem=problem,
                      events=body.get("events", []), request=body.get("request", ""))
+
+
+_STREAM_LABELS = {
+    "scheduling_rules": "Understanding the request",
+    "disruption": "Reading the disruption",
+    "cancel_filter": "Reading the cancellation",
+    "family_notices": "Drafting notices",
+    "league_games": "Reading the schedule photo",
+}
+
+
+def _stream_label(response_format: object) -> str:
+    """Human label for a model call, from its strict-schema name (or plain explain)."""
+    if response_format is None:
+        return "Explaining the summary"
+    name = ""
+    if isinstance(response_format, dict):
+        try:
+            name = str(response_format["json_schema"]["name"])
+        except (KeyError, TypeError):
+            name = ""
+    return _STREAM_LABELS.get(name, "Calling the model")
+
+
+def _stream_kwargs(call: str, body: dict) -> dict:
+    """run_agent kwargs for a stream call; mirrors the /api/plan|revise|reschedule|cancel bodies."""
+    if call == "plan":
+        problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
+        games = body.get("games")
+        if games:
+            problem = club_problem(
+                [Busy.from_dict(b) for b in body.get("extra_busy", [])]
+                + games_to_busy(ScheduleImport.from_dict(games), problem)
+            )
+        return {"problem": problem, "request": body.get("request", ""), "previous": body.get("previous")}
+    if call == "revise":
+        problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
+        return {"problem": problem, "proposal": body.get("proposal"), "request": body.get("request", "")}
+    if call == "reschedule":
+        problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
+        return {"problem": problem, "events": body.get("events", []), "request": body.get("request", "")}
+    if call == "cancel":
+        return {"problem": club_problem(), "events": body.get("events", []), "request": body.get("request", "")}
+    raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule or cancel.")
+
+
+def stream_events(call: str, mode: str, base: ChatFn, kwargs: dict):  # type: ignore[no-untyped-def]
+    """Yield step start/done dicts, then one result (or error) dict, for an agent call.
+
+    The agent runs on a worker thread while this generator drains its queued
+    step events: plain threads and a queue, no event loop, no extra sockets.
+    """
+    pending: queue.Queue = queue.Queue()
+
+    def chat(messages: list, *, response_format=None, usage_out=None):  # type: ignore[no-untyped-def]
+        label = _stream_label(response_format)
+        pending.put({"type": "step", "phase": "start", "label": label})
+        started = monotonic()
+        try:
+            if usage_out is not None:
+                return base(messages, response_format=response_format, usage_out=usage_out)
+            return base(messages, response_format=response_format)
+        finally:
+            pending.put({"type": "step", "phase": "done", "label": label,
+                         "latency_ms": int((monotonic() - started) * 1000)})
+
+    def work() -> None:
+        try:
+            out = run_agent(mode, call, _chat=chat, **kwargs)
+        except HTTPException as exc:
+            pending.put({"type": "error", "detail": exc.detail})
+            return
+        except Exception as exc:
+            from schedule_agent import AgentError, ModelError
+
+            if isinstance(exc, (AgentError, ModelError)):
+                pending.put({"type": "error", "detail": str(exc)})
+            else:
+                pending.put({"type": "error", "detail": f"Unexpected error: {exc}"})
+            return
+        pending.put({"type": "result", "proposal": out["proposal"], "trace": out["trace"]})
+
+    worker = threading.Thread(target=work, daemon=True)
+    worker.start()
+    while True:
+        evt = pending.get()
+        yield evt
+        if evt.get("type") in ("result", "error"):
+            break
+    worker.join()
+
+
+@app.post("/api/stream")
+def api_stream(body: dict):  # type: ignore[no-untyped-def]
+    """Stream an agent call as server-sent events: step start/done, then the result.
+
+    Same work as /api/plan|revise|reschedule|cancel (body adds "call"), but the
+    page can show each model call starting and finishing instead of one frozen
+    wait.
+    """
+    call = body.get("call", "plan")
+    mode = body.get("mode", "mock")
+    base = make_chat(mode)  # 400 early when a key is missing, before streaming starts
+    kwargs = _stream_kwargs(call, body)  # 400 early on an unknown call
+
+    def gen():  # type: ignore[no-untyped-def]
+        for evt in stream_events(call, mode, base, kwargs):
+            yield "data: " + json.dumps(evt) + "\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.post("/api/approve")

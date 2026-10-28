@@ -9,6 +9,7 @@ raise :class:`ModelError` without ever including the API key.
 from __future__ import annotations
 
 import os
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -76,6 +77,18 @@ def chat_fn(config: ModelConfig, *, temperature: float = 0.0) -> ChatFn:
     the model id is a ``-contributor`` one.
     """
     _refuse_contributor(config.model)
+    state: dict[str, Any] = {}
+    lock = threading.Lock()
+
+    def _client() -> httpx.Client:
+        """One pooled client per chat function: connections are kept alive across calls."""
+        client = state.get("client")
+        if client is None:
+            with lock:
+                client = state.get("client")
+                if client is None:
+                    state["client"] = client = httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS)
+        return client
 
     def chat(
         messages: list[dict[str, str]],
@@ -94,37 +107,37 @@ def chat_fn(config: ModelConfig, *, temperature: float = 0.0) -> ChatFn:
         headers = {"Authorization": "Bearer " + config.api_key}
         last_status: int | None = None
         started = time.monotonic()
-        with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            for _ in range(2):  # one try + one retry on 429/5xx
-                try:
-                    response = client.post(url, json=payload, headers=headers)
-                except httpx.HTTPError as exc:
-                    raise ModelError("Assistant unavailable: could not reach the model.") from exc
-                if response.status_code in (429, 500, 502, 503, 504):
-                    last_status = response.status_code
-                    continue
-                if response.status_code >= 400:
-                    raise ModelError("Assistant unavailable: the model request failed.")
-                try:
-                    data = response.json()
-                    text = data["choices"][0]["message"]["content"]
-                except (ValueError, KeyError, IndexError, TypeError) as exc:
-                    raise ModelError("Assistant unavailable: bad model response.") from exc
-                if not isinstance(text, str) or not text.strip():
-                    raise ModelError("Assistant unavailable: empty model response.")
-                if usage_out is not None:
-                    usage = data.get("usage") if isinstance(data, dict) else None
-                    usage = usage if isinstance(usage, dict) else {}
-                    usage_out.update(
-                        {
-                            "model": data.get("model", config.model) if isinstance(data, dict) else config.model,
-                            "latency_ms": int((time.monotonic() - started) * 1000),
-                            "prompt_tokens": usage.get("prompt_tokens"),
-                            "completion_tokens": usage.get("completion_tokens"),
-                            "total_tokens": usage.get("total_tokens"),
-                        }
-                    )
-                return text
+        client = _client()
+        for _ in range(2):  # one try + one retry on 429/5xx
+            try:
+                response = client.post(url, json=payload, headers=headers)
+            except httpx.HTTPError as exc:
+                raise ModelError("Assistant unavailable: could not reach the model.") from exc
+            if response.status_code in (429, 500, 502, 503, 504):
+                last_status = response.status_code
+                continue
+            if response.status_code >= 400:
+                raise ModelError("Assistant unavailable: the model request failed.")
+            try:
+                data = response.json()
+                text = data["choices"][0]["message"]["content"]
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                raise ModelError("Assistant unavailable: bad model response.") from exc
+            if not isinstance(text, str) or not text.strip():
+                raise ModelError("Assistant unavailable: empty model response.")
+            if usage_out is not None:
+                usage = data.get("usage") if isinstance(data, dict) else None
+                usage = usage if isinstance(usage, dict) else {}
+                usage_out.update(
+                    {
+                        "model": data.get("model", config.model) if isinstance(data, dict) else config.model,
+                        "latency_ms": int((time.monotonic() - started) * 1000),
+                        "prompt_tokens": usage.get("prompt_tokens"),
+                        "completion_tokens": usage.get("completion_tokens"),
+                        "total_tokens": usage.get("total_tokens"),
+                    }
+                )
+            return text
         raise ModelError(f"Assistant unavailable: model busy (HTTP {last_status}).")
 
     return chat

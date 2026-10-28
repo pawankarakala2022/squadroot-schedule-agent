@@ -159,25 +159,74 @@ function renderShortfalls(p) {
     ? "<ul>" + p.shortfalls.map((s) => `<li>${esc(s.team_id)} ${esc(s.event_type)}: ${esc(s.reason)}</li>`).join("") + "</ul>"
     : "None — everything asked for was placed.";
 }
+function paintSteps(steps) {
+  $("trace").textContent = steps.length ? steps.join("\n") : "…";
+}
+
+async function runStream(kind, payload) {
+  const r = await fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({ mode: S.mode, call: kind }, payload)) });
+  if (!r.body) { // very old browser: fall back to the one-shot endpoints
+    let j;
+    if (kind === "plan") j = await post("/api/plan", payload);
+    if (kind === "revise") j = await post("/api/revise", payload);
+    if (kind === "reschedule") j = await post("/api/reschedule", payload);
+    if (kind === "cancel") j = await post("/api/cancel", payload);
+    showProposal(j.proposal, j.trace);
+    return;
+  }
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error((j && j.detail) || ("Request failed (" + r.status + ")"));
+  }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  const steps = [];
+  paintSteps(steps);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      for (const line of frame.split("\n")) {
+        if (!line.startsWith("data:")) continue;
+        const evt = JSON.parse(line.slice(5));
+        if (evt.type === "step") {
+          if (evt.phase === "start") steps.push("… " + evt.label);
+          else steps[steps.length - 1] = "✓ " + evt.label + " — " + (evt.latency_ms / 1000).toFixed(1) + "s";
+          paintSteps(steps);
+        } else if (evt.type === "result") {
+          showProposal(evt.proposal, evt.trace);
+          return;
+        } else if (evt.type === "error") {
+          throw new Error(evt.detail || "Request failed");
+        }
+      }
+    }
+  }
+  throw new Error("The stream ended without a result.");
+}
+
 async function run(kind) {
   clearFail();
   const request = $("request").value;
   try {
-    let j;
-    if (kind === "plan") j = await post("/api/plan", { request, games: S.games, extra_busy: S.extraBusy });
+    if (kind === "plan") await runStream(kind, { request, games: S.games, extra_busy: S.extraBusy });
     if (kind === "revise") {
       if (!S.proposal) throw new Error("Plan something first, then revise it.");
-      j = await post("/api/revise", { proposal: S.proposal, request, extra_busy: S.extraBusy });
+      await runStream(kind, { proposal: S.proposal, request, extra_busy: S.extraBusy });
     }
     if (kind === "reschedule") {
       if (!S.events.length) throw new Error("There is no calendar yet — set one first.");
-      j = await post("/api/reschedule", { events: S.events, request, extra_busy: S.extraBusy });
+      await runStream(kind, { events: S.events, request, extra_busy: S.extraBusy });
     }
     if (kind === "cancel") {
       if (!S.events.length) throw new Error("There is no calendar yet — set one first.");
-      j = await post("/api/cancel", { events: S.events, request });
+      await runStream(kind, { events: S.events, request });
     }
-    showProposal(j.proposal, j.trace);
   } catch (err) { fail(err.message); }
 }
 
