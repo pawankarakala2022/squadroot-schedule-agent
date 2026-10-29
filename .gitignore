@@ -29,6 +29,7 @@ evals/runs/
 
 # Installer / tool temp leftovers
 pip-*/
+pytest-of-*/
 tmp*/
 manual_phase*_check.py
 

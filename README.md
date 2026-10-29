@@ -68,10 +68,21 @@ Requires Python 3.12+ (a real installer — the zip/embeddable Python has no
 
 ```powershell
 py -3.12 -m venv .venv                            # once; `py -0p` lists your Pythons
+.venv\Scripts\python -m pip --version             # proves the venv is real (next line fails without pip)
 .venv\Scripts\python -m pip install -e ".[app,test]"
 .venv\Scripts\python -m pytest                    # offline tests (fake models stand in)
 .venv\Scripts\python -m app                       # demo web app, then open http://127.0.0.1:8000
 ```
+
+`py -3.12 -m venv .venv` prints nothing on success — a few seconds of
+quiet, then the prompt returns, is what working looks like. The
+`pip --version` line is the proof. If it errors (`No module named pip`,
+or `.venv\Scripts\python` does not exist), the venv was made by the
+zip/embeddable Python or is half-built: delete it and recreate it from
+a real installer Python, for example
+`& "C:\Users\<you>\AppData\Local\Programs\Python\Python312\python.exe" -m venv .venv`
+(pick the path `py -0p` prints). Or skip local Python entirely and use
+the Docker commands below.
 
 Always run `.venv\Scripts\python`, never bare `python` — bare `python` is
 whatever is first on `PATH` and will report every library as missing.
