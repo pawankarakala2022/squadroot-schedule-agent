@@ -278,6 +278,28 @@ def test_reschedule_inverted_window_shortfalls_safely() -> None:
     assert proposal.summary.startswith("No sessions needed moving.")
 
 
+def test_reschedule_no_hit_says_nothing_changed_not_placed() -> None:
+    chat = _chat(_payload(date_from="2026-09-11", date_to="2026-09-11", closed_field_aliases=["F2"]))
+    proposal = ScheduleAgent(chat, deterministic_summary=True).reschedule(
+        _problem(), _calendar(), "rain Friday, South closed"
+    )
+    assert len(proposal.events) == 5
+    assert not proposal.shortfalls
+    assert proposal.summary.startswith("No sessions needed moving.")
+    assert proposal.summary.rstrip().endswith("Nothing changed. 5 existing session(s) unchanged.")
+    assert "sessions placed." not in proposal.summary
+
+
+def test_summary_puts_shortfalls_first_and_unchanged_count_last() -> None:
+    chat = _chat()
+    proposal = ScheduleAgent(chat, deterministic_summary=True).reschedule(
+        _problem(), _calendar(), "rain Thursday", not_before=date(2026, 10, 1)
+    )
+    assert proposal.summary.index("Shortfalls:") < proposal.summary.index("Checks:")
+    assert proposal.summary.rstrip().endswith("3 existing session(s) unchanged.")
+    assert "sessions placed." not in proposal.summary
+
+
 def test_reschedule_unknown_pin_dropped_and_reported() -> None:
     proposal = ScheduleAgent(_chat()).reschedule(
         _problem(), _calendar(), "rain Thursday", allowed_fields=["f2", "f9"]

@@ -24,6 +24,7 @@ from app.main import (
     api_revise,
     api_stream,
     availability_result,
+    club_problem,
     get_calendar,
     get_club,
     index,
@@ -128,10 +129,18 @@ def test_stream_rejects_unknown_call() -> None:
 
 
 def test_calendar_is_nov_dec_sample() -> None:
+    from datetime import date
+
     cal = get_calendar()
-    assert cal["season_start"] == "2026-11-01" and cal["season_end"] == "2026-11-30"
+    assert cal["season_start"] == "2026-11-01" and cal["season_end"] == "2026-12-31"
+    assert cal["scheduling_end"] == "2026-11-30"
     assert cal["team_count"] == 4 and cal["coach_count"] == 2 and cal["events"]
     assert all("2026-11-01" <= e["starts_at"][:10] <= "2026-11-30" for e in cal["events"])
+    assert all(not s["week_start"].startswith("2026-12") for s in cal["proposal"]["shortfalls"])  # no December shortfall noise
+    problem = club_problem()
+    assert problem.season_end == date(2026, 11, 30)  # solver never places in December
+    assert date(2026, 12, 1) in problem.blackout_dates and date(2026, 12, 31) in problem.blackout_dates
+    assert all(f.open_from is not None and f.open_until is not None for f in problem.fields)  # grounds stay open
     assert all(c["passed"] for c in cal["proposal"]["check_results"])
     assert {e["team_id"] for e in cal["events"]} == {f"t{i}" for i in range(1, 5)}
 
@@ -237,6 +246,11 @@ def test_frontend_shows_current_diff_and_simple_primary() -> None:
     assert "position: sticky" in html and "Expand all sessions" in html and "Minimize sessions" in html
     assert "Week of " in html and 'details class=' in html
     assert "Will be cancelled (red)" in html and "CONFLICT" in html
+    # Review order: shortfalls at the top (red on conflict), checks at the bottom.
+    assert html.index('id="shortfalls"') < html.index('id="diff"') < html.index('id="summary"')
+    assert html.index('id="calendar"') < html.index('id="checks"')
+    assert "alert-red" in html and "Conflict — could not be placed" in html
+    assert "Grounds stay open in December" in html and "no sessions are scheduled there" in html
     # Waiting signal: spinner banner appears and the button locks while running.
     assert 'id="working"' in html and 'class="spinner"' in html
     assert "do not press the button again" in html and "setBusy(true" in html and "setBusy(false)" in html

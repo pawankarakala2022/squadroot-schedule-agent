@@ -154,7 +154,8 @@ def test_deterministic_summary_skips_explain_model_call() -> None:
         _problem(), [_event("t1", "f1", 7)], "Add a game with Falcons on Thursday Sep 10"
     )
     assert plain_calls["n"] == 0  # no explain model call for English
-    assert "sessions placed." in proposal.summary and "Checks:" in proposal.summary
+    assert "existing session(s) unchanged." in proposal.summary and "Checks:" in proposal.summary
+    assert "sessions placed." not in proposal.summary
     explain_step = next(s for s in agent.last_trace if s["step"] == "explain")
     assert explain_step["source"] == "deterministic"
 

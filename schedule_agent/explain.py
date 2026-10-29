@@ -72,49 +72,61 @@ def _session_patterns(problem: Problem, proposal: Proposal) -> list[str]:
     return lines
 
 
-def summarize_proposal(problem: Problem, proposal: Proposal) -> str:
+def summarize_proposal(problem: Problem, proposal: Proposal, *, total_line: str | None = None) -> str:
     """Deterministic English summary from the checked facts (no model call).
 
     Same facts the model would be given -- session patterns, check
     counts, shortfalls, notes -- rendered directly. Hosts that enable
     it skip the slowest call in the loop; team and field names are
     copied exactly, and nothing can be invented.
+
+    Shortfalls and failed checks come first so a conflict is seen
+    before the detail; the session count (``total_line``, or
+    ``"N sessions placed."`` for a fresh plan) goes last. Callers
+    whose proposal mostly keeps a saved calendar pass a ``total_line``
+    such as ``"Nothing changed. 18 existing session(s) unchanged."``
+    so kept sessions are never reported as newly placed.
     """
-    lines = [f"{len(proposal.events)} sessions placed."]
     failed = [c for c in proposal.check_results if not c.passed]
-    lines.append(f"Checks: {len(proposal.check_results) - len(failed)}/{len(proposal.check_results)} passed.")
-    if proposal.events:
-        lines.append("")
-        lines.extend("- " + pattern + "." for pattern in _session_patterns(problem, proposal))
-    if failed:
-        lines.append("")
-        lines.append("Failed checks:")
-        lines.extend(f"- {c.check} on event #{c.event_index}: {c.reason}" for c in failed[:5])
+    sections: list[str] = []
     if proposal.shortfalls:
-        lines.append("")
-        lines.append("Shortfalls:")
-        lines.append(proposal.shortfall_summary())
+        sections.append("Shortfalls:\n" + proposal.shortfall_summary())
+    if failed:
+        sections.append(
+            "Failed checks:\n"
+            + "\n".join(f"- {c.check} on event #{c.event_index}: {c.reason}" for c in failed[:5])
+        )
+    if proposal.events:
+        sections.append("\n".join("- " + pattern + "." for pattern in _session_patterns(problem, proposal)))
+    sections.append(
+        f"Checks: {len(proposal.check_results) - len(failed)}/{len(proposal.check_results)} passed."
+    )
     if proposal.rules.notes:
-        lines.append("")
-        lines.append("Notes: " + "; ".join(proposal.rules.notes))
-    return "\n".join(lines)
+        sections.append("Notes: " + "; ".join(proposal.rules.notes))
+    sections.append(total_line if total_line is not None else f"{len(proposal.events)} sessions placed.")
+    return "\n\n".join(sections)
 
 
-def explain_proposal(problem: Problem, proposal: Proposal, chat: ChatFn, *, language: str = "en") -> str:
+def explain_proposal(
+    problem: Problem, proposal: Proposal, chat: ChatFn, *, language: str = "en", total_line: str | None = None
+) -> str:
     """Return a short summary of ``proposal`` in ``language``.
 
     Raises :class:`ModelError` when the model is unreachable or answers
-    with nothing usable.
+    with nothing usable. ``total_line`` replaces the default
+    ``"N sessions placed."`` fact for proposals that keep a saved
+    calendar, so kept sessions are not described as newly placed.
     """
-    lines = [f"{len(proposal.events)} sessions placed."]
+    lines: list[str] = []
+    if proposal.shortfalls:
+        lines.append("Shortfalls:\n" + proposal.shortfall_summary())
+    lines.append(total_line if total_line is not None else f"{len(proposal.events)} sessions placed.")
     if proposal.events:
         lines.append("Session patterns: " + "; ".join(_session_patterns(problem, proposal)) + ".")
     else:
         lines.append("Sessions: none.")
     failed = [c for c in proposal.check_results if not c.passed]
     lines.append(f"Checks: {len(proposal.check_results) - len(failed)}/{len(proposal.check_results)} passed.")
-    if proposal.shortfalls:
-        lines.append("Shortfalls:\n" + proposal.shortfall_summary())
     if proposal.rules.notes:
         lines.append("Notes: " + "; ".join(proposal.rules.notes))
     facts = "\n".join(lines)

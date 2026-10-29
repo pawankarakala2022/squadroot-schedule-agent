@@ -15,7 +15,7 @@ import os
 import queue
 import threading
 from collections.abc import Callable
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from time import monotonic
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -136,7 +136,8 @@ def _mock_req(alias: str, day: int, field_alias: str) -> dict:
     }
 
 
-# Four teams, two coaches, November only. Paired teams share a day and
+# Four teams, two coaches, scheduling in November only (December stays
+# open but unscheduled; see scheduling_end in demo/club.json). Paired teams share a day and
 # field, so the solver's earliest-first search places each pair
 # back-to-back (17:00 then 18:00, same field, same coach): Coach 1 on
 # Mondays, Coach 2 on Thursdays, both on North Field.
@@ -539,6 +540,28 @@ def _coach_busy() -> list[Busy]:
     return busy
 
 
+def _scheduling_end() -> date:
+    """Last date the solver may place on (displayed season may run later)."""
+    return date.fromisoformat(CLUB.get("scheduling_end") or CLUB["season_end"])
+
+
+def _unscheduled_dates() -> list[date]:
+    """Displayed-season dates after scheduling_end: grounds open, no sessions.
+
+    Returned as blackout dates so nothing is ever placed there (a late
+    reschedule search crossing into December is blocked too), while the
+    fields keep their normal open hours. The solver's own season ends
+    at scheduling_end, so these dates produce no shortfalls.
+    """
+    day = _scheduling_end() + timedelta(days=1)
+    last = date.fromisoformat(CLUB["season_end"])
+    out: list[date] = []
+    while day <= last:
+        out.append(day)
+        day += timedelta(days=1)
+    return out
+
+
 def club_problem(extra_busy: list[Busy] | None = None) -> Problem:
     """Rebuild the demo Problem from demo/club.json plus optional game busy."""
     return Problem(
@@ -553,9 +576,10 @@ def club_problem(extra_busy: list[Busy] | None = None) -> Problem:
             for f in CLUB["fields"]
         ],
         season_start=date.fromisoformat(CLUB["season_start"]),
-        season_end=date.fromisoformat(CLUB["season_end"]),
+        season_end=_scheduling_end(),
         timezone=TZ,
         busy=_coach_busy() + list(extra_busy or []),
+        blackout_dates=_unscheduled_dates(),
     )
 
 
@@ -753,6 +777,7 @@ def get_club() -> dict:
         "timezone": TZ,
         "season_start": CLUB["season_start"],
         "season_end": CLUB["season_end"],
+        "scheduling_end": _scheduling_end().isoformat(),
         "teams": [{"id": t["id"], "name": t["name"], "languages": LANGUAGES_BY_TEAM[t["id"]]}
                   for t in CLUB["teams"]],
         "fields": CLUB["fields"],
@@ -774,6 +799,7 @@ def demo_calendar() -> dict:
         "trace": agent.last_trace,
         "season_start": CLUB["season_start"],
         "season_end": CLUB["season_end"],
+        "scheduling_end": _scheduling_end().isoformat(),
         "team_count": len(CLUB["teams"]),
         "field_count": len(CLUB["fields"]),
         "coach_count": len(COACHES),
@@ -782,7 +808,7 @@ def demo_calendar() -> dict:
 
 @app.get("/api/calendar")
 def get_calendar() -> dict:
-    """Current sample schedule for November 2026, shown on page load."""
+    """Current sample schedule (November 2026 sessions), shown on page load."""
     return demo_calendar()
 
 

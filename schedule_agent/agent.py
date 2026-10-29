@@ -452,7 +452,9 @@ class ScheduleAgent:
             }
         )
         proposal = Proposal(rules=rules, events=kept, check_results=results, shortfalls=[])
-        proposal.summary = "\n".join(lines) + "\n" + self._explain(problem, proposal, language)
+        proposal.summary = "\n".join(lines) + "\n" + self._explain(
+            problem, proposal, language, total_line=f"{len(kept)} existing session(s) unchanged."
+        )
         return proposal
 
     def add(
@@ -694,7 +696,11 @@ class ScheduleAgent:
             )
             if not new or rounds >= MAX_VERIFY_ROUNDS:
                 proposal = Proposal(rules=rules, events=ordered, check_results=results, shortfalls=shortfalls)
-                proposal.summary = self._moves_summary(problem, moves) + "\n" + self._explain(checking, proposal, language)
+                unchanged = f"{len(kept)} existing session(s) unchanged."
+                total_line = f"Nothing changed. {unchanged}" if not moves and not shortfalls else unchanged
+                proposal.summary = self._moves_summary(problem, moves) + "\n" + self._explain(
+                    checking, proposal, language, total_line=total_line
+                )
                 return proposal
             for busy in new:
                 seen.add((busy.resource, busy.start, busy.end))
@@ -986,8 +992,12 @@ class ScheduleAgent:
                 proposal = Proposal(
                     rules=out_rules, events=combined, check_results=results, shortfalls=draft.shortfalls
                 )
+                unchanged = f"{len(current)} existing session(s) unchanged."
+                total_line = f"Nothing changed. {unchanged}" if not draft.events else unchanged
                 proposal.summary = (
-                    self._added_summary(problem, draft.events) + "\n" + self._explain(checking, proposal, language)
+                    self._added_summary(problem, draft.events)
+                    + "\n"
+                    + self._explain(checking, proposal, language, total_line=total_line)
                 )
                 return proposal
             for busy in new:
@@ -1093,13 +1103,19 @@ class ScheduleAgent:
                 raise AgentError("The availability check returned something unusable; please try again.")
         return out
 
-    def _explain(self, problem: Problem, proposal: Proposal, language: str = "en") -> str:
+    def _explain(
+        self, problem: Problem, proposal: Proposal, language: str = "en", *, total_line: str | None = None
+    ) -> str:
         """Summarize the checked proposal (deterministic English when enabled)."""
         if self._deterministic_summary and language.lower().startswith("en"):
             self.last_trace.append(
                 {"step": "explain", "source": "deterministic", "events": len(proposal.events), "latency_ms": 0}
             )
-            return summarize_proposal(problem, proposal)
+            return summarize_proposal(problem, proposal, total_line=total_line)
         return explain_proposal(
-            problem, proposal, self._traced(self._explain_chat, "explain", self._explain_usage), language=language
+            problem,
+            proposal,
+            self._traced(self._explain_chat, "explain", self._explain_usage),
+            language=language,
+            total_line=total_line,
         )

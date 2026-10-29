@@ -3,7 +3,8 @@
   "note": "Fictional demo data: no real clubs, families or people.",
   "timezone": "America/Toronto",
   "season_start": "2026-11-01",
-  "season_end": "2026-11-30",
+  "season_end": "2026-12-31",
+  "scheduling_end": "2026-11-30",
   "teams": [
     {"id": "t1", "name": "Foxes", "languages": ["es", "en"]},
     {"id": "t2", "name": "Badgers", "languages": ["en", "vi"]},
