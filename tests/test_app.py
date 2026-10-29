@@ -51,6 +51,9 @@ def test_club_and_index() -> None:
     club = get_club()
     assert club["teams"] and club["fields"] and club["presets"]["plan_request"]
     assert "Wednesday" in club["coach_note"]
+    assert len(club["teams"]) == 8 and len(club["coaches"]) == 2
+    assert club["coaches"][0]["back_to_back"] == [["Foxes", "Badgers"], ["Otters", "Wolves"]]
+    assert club["coaches"][1]["back_to_back"] == [["Herons", "Beavers"], ["Lynx", "Moose"]]
 
 
 def test_plan_revise_approve_notices_flow() -> None:
@@ -62,7 +65,7 @@ def test_plan_revise_approve_notices_flow() -> None:
     assert result["approved"] is True
 
     notices = api_notices({"mode": "mock", "events": proposal["events"]})["notices"]
-    assert {n["language"] for n in notices["notices"]} == {"es", "en", "vi"}  # union of team languages
+    assert {n["language"] for n in notices["notices"]} == {"es", "en", "vi", "fr", "pa", "hi"}  # union of team languages
     assert all(n["verified"] for n in notices["notices"])  # mock echoes the facts
 
 
@@ -127,15 +130,35 @@ def test_stream_rejects_unknown_call() -> None:
 def test_calendar_is_nov_dec_sample() -> None:
     cal = get_calendar()
     assert cal["season_start"] == "2026-11-01" and cal["season_end"] == "2026-12-31"
-    assert cal["team_count"] == 2 and cal["events"]
+    assert cal["team_count"] == 8 and cal["coach_count"] == 2 and cal["events"]
     assert all("2026-11-01" <= e["starts_at"][:10] <= "2026-12-31" for e in cal["events"])
     assert all(c["passed"] for c in cal["proposal"]["check_results"])
+    assert {e["team_id"] for e in cal["events"]} == {f"t{i}" for i in range(1, 9)}
+
+
+def test_coaches_train_back_to_back() -> None:
+    """Each coach's pair runs consecutively: 17:00 then 18:00, same field."""
+    events = get_calendar()["events"]
+    by_start = {(e["starts_at"][:10], e["team_id"]): e for e in events}
+    # A full week in mid-season: Mon Nov 9 - Fri Nov 13, 2026.
+    pairs = [
+        ("2026-11-09", "t1", "t2", "f1"),  # Coach 1, Monday, North
+        ("2026-11-12", "t3", "t4", "f1"),  # Coach 1, Thursday, North
+        ("2026-11-10", "t5", "t6", "f2"),  # Coach 2, Tuesday, South
+        ("2026-11-13", "t7", "t8", "f2"),  # Coach 2, Friday, South
+    ]
+    for day, first, second, field_id in pairs:
+        a, b = by_start[(day, first)], by_start[(day, second)]
+        assert a["starts_at"][11:16] == "17:00" and a["ends_at"][11:16] == "18:00"
+        assert b["starts_at"][11:16] == "18:00" and b["ends_at"][11:16] == "19:00"
+        assert a["ends_at"] == b["starts_at"]  # back-to-back, no gap, no overlap
+        assert a["field_id"] == b["field_id"] == field_id
 
 
 def test_availability_photo_mock_blocks_time() -> None:
     result = availability_result("mock", b"fake-bytes", "image/png")
-    assert result["mock"] is True and result["team_count"] == 2
-    assert set(result["teams_seen"]) == {"Foxes", "Badgers"}
+    assert result["mock"] is True and result["team_count"] == 8
+    assert set(result["teams_seen"]) == {"Foxes", "Herons"}  # one team per coach
     assert all(g["matched"] for g in result["availability"]["grounds"])
     assert all(c["matched"] for c in result["availability"]["coach"])
     assert result["busy_count"] > 0 and result["busy"]

@@ -6,21 +6,42 @@
   "season_end": "2026-12-31",
   "teams": [
     {"id": "t1", "name": "Foxes", "languages": ["es", "en"]},
-    {"id": "t2", "name": "Badgers", "languages": ["en", "vi"]}
+    {"id": "t2", "name": "Badgers", "languages": ["en", "vi"]},
+    {"id": "t3", "name": "Otters", "languages": ["fr", "en"]},
+    {"id": "t4", "name": "Wolves", "languages": ["es", "en"]},
+    {"id": "t5", "name": "Herons", "languages": ["pa", "en"]},
+    {"id": "t6", "name": "Beavers", "languages": ["hi", "en"]},
+    {"id": "t7", "name": "Lynx", "languages": ["vi", "en"]},
+    {"id": "t8", "name": "Moose", "languages": ["fr", "en"]}
   ],
   "fields": [
     {"id": "f1", "name": "North Field", "open_from": "17:00", "open_until": "20:00"},
     {"id": "f2", "name": "South Field", "open_from": "17:00", "open_until": "20:00"}
   ],
-  "coach": {
-    "teams": ["t1", "t2"],
-    "note": "One coach trains both teams and is unavailable on Wednesday evenings.",
-    "unavailable_weekday": 2,
-    "unavailable_from": "17:00",
-    "unavailable_until": "20:00"
-  },
+  "coaches": [
+    {
+      "id": "c1",
+      "label": "Coach 1",
+      "teams": ["t1", "t2", "t3", "t4"],
+      "back_to_back": [["t1", "t2"], ["t3", "t4"]],
+      "note": "Coach 1 trains Foxes then Badgers back-to-back on Mondays (North Field) and Otters then Wolves back-to-back on Thursdays (North Field), and is unavailable on Wednesday evenings.",
+      "unavailable_weekday": 2,
+      "unavailable_from": "17:00",
+      "unavailable_until": "20:00"
+    },
+    {
+      "id": "c2",
+      "label": "Coach 2",
+      "teams": ["t5", "t6", "t7", "t8"],
+      "back_to_back": [["t5", "t6"], ["t7", "t8"]],
+      "note": "Coach 2 trains Herons then Beavers back-to-back on Tuesdays (South Field) and Lynx then Moose back-to-back on Fridays (South Field), and is unavailable on Monday evenings.",
+      "unavailable_weekday": 0,
+      "unavailable_from": "17:00",
+      "unavailable_until": "20:00"
+    }
+  ],
   "presets": {
-    "plan_request": "Foxes practice twice a week, 60 minutes, Mondays and Wednesdays after 5pm. Badgers practice once a week, 60 minutes, Thursdays after 5pm.",
+    "plan_request": "Every team practices once a week, 60 minutes, after 5pm. Coach 1 runs Foxes then Badgers back-to-back on Mondays on North Field, and Otters then Wolves back-to-back on Thursdays on North Field. Coach 2 runs Herons then Beavers back-to-back on Tuesdays on South Field, and Lynx then Moose back-to-back on Fridays on South Field.",
     "rain_request": "Rain Thursday November 12, North Field is closed.",
     "cancel_request": "Cancel all Thursday sessions."
   }

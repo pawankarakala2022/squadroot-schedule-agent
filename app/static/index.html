@@ -249,7 +249,7 @@ async function loadCalendar() { const r = await fetch("/api/calendar"); const j 
 async function init() {
   const r = await fetch("/api/club"); S.club = await r.json(); $("club").textContent = S.club.club + " — Schedule Agent demo";
   $("club-sub").textContent = "Season " + S.club.season_start + " to " + S.club.season_end + " (" + S.club.timezone + "). Ask in words, review every change in red, then approve.";
-  $("club-facts").textContent = S.club.teams.length + " teams: " + S.club.teams.map((t) => t.name).join(", ") + " · " + S.club.fields.length + " fields: " + S.club.fields.map((f) => f.name + " " + f.open_from + "–" + f.open_until).join(", ") + " · " + S.club.coach_note;
+  $("club-facts").textContent = S.club.teams.length + " teams: " + S.club.teams.map((t) => t.name).join(", ") + " · " + (S.club.coaches || []).length + " coaches, back-to-back pairs: " + (S.club.coaches || []).map((c) => c.label + " (" + c.back_to_back.map((p) => p.join(" → ")).join("; ") + ")").join(" · ") + " · " + S.club.fields.length + " fields: " + S.club.fields.map((f) => f.name + " " + f.open_from + "–" + f.open_until).join(", ") + " · " + S.club.coach_note;
   await loadCalendar();
   $("mode").addEventListener("change", (e) => { S.mode = e.target.value; setModeNote(); }); setModeNote();
   $("preset-plan").addEventListener("click", () => { $("request").value = S.club.presets.plan_request; });

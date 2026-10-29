@@ -186,14 +186,14 @@ def test_api_run_routes_any_wording() -> None:
 
 
 def test_handle_mock_end_to_end_move() -> None:
-    """The demo path: mock chat routes and moves 10/29 -> 10/30 with no key."""
+    """The demo path: mock chat routes and moves 10/26 -> 10/27 with no key."""
     from app.main import mock_chat
 
     agent = ScheduleAgent(mock_chat)
-    planned = agent.handle(_problem(), "Badgers practice once a week, 60 minutes, Thursdays after 5pm")
-    assert any(e.starts_at.date() == date(2026, 10, 29) for e in planned.events)
-    moved = agent.handle(_problem(), "Move thu practice from 10/29 to friday 10/30",
+    planned = agent.handle(_problem(), "Badgers practice once a week, 60 minutes, Mondays after 5pm")
+    assert any(e.team_id == "t2" and e.starts_at.date() == date(2026, 10, 26) for e in planned.events)
+    moved = agent.handle(_problem(), "Move mon practice from 10/26 to tuesday 10/27",
                          proposal=planned, events=planned.events)
     days = sorted(e.starts_at.date() for e in moved.events)
-    assert date(2026, 10, 29) not in days
-    assert date(2026, 10, 30) in days
+    assert date(2026, 10, 26) not in days
+    assert date(2026, 10, 27) in days

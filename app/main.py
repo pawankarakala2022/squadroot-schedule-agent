@@ -57,7 +57,9 @@ except OSError:
 
 TEAM_NAMES = {t["id"]: t["name"] for t in CLUB["teams"]}
 LANGUAGES_BY_TEAM = {t["id"]: list(t.get("languages", ["en"])) for t in CLUB["teams"]}
-COACH = CLUB["coach"]
+# Two coaches, each training two back-to-back pairs; a lone "coach" key
+# in older club files still works.
+COACHES: list[dict] = list(CLUB.get("coaches") or ([CLUB["coach"]] if CLUB.get("coach") else []))
 TZ = CLUB["timezone"]
 
 _DOTENV_ALLOWLIST = frozenset(
@@ -97,30 +99,26 @@ def _load_dotenv() -> None:
             if cleaned:
                 os.environ.setdefault(var, cleaned)
 
+def _mock_req(alias: str, day: int, field_alias: str) -> dict:
+    """One mock practice: weekly, 60 minutes, evenings, on one field."""
+    return {
+        "team_alias": alias, "event_type": "practice", "sessions_per_week": 1,
+        "duration_minutes": 60, "allowed_days": [day],
+        "allowed_field_aliases": [field_alias], "earliest_start": "17:00",
+        "latest_end": "20:00", "title": "",
+    }
+
+
+# Eight teams, two coaches. Paired teams share a day and field, so the
+# solver's earliest-first search places each pair back-to-back (17:00
+# then 18:00, same field, same coach): Coach 1 Mon/Thu on North,
+# Coach 2 Tue/Fri on South.
 MOCK_RULES = {
     "requirements": [
-        {
-            "team_alias": "T1",
-            "event_type": "practice",
-            "sessions_per_week": 2,
-            "duration_minutes": 60,
-            "allowed_days": [0, 2],
-            "allowed_field_aliases": [],
-            "earliest_start": "17:00",
-            "latest_end": "20:00",
-            "title": "",
-        },
-        {
-            "team_alias": "T2",
-            "event_type": "practice",
-            "sessions_per_week": 1,
-            "duration_minutes": 60,
-            "allowed_days": [3],
-            "allowed_field_aliases": [],
-            "earliest_start": "17:00",
-            "latest_end": "20:00",
-            "title": "",
-        },
+        _mock_req("T1", 0, "F1"), _mock_req("T2", 0, "F1"),
+        _mock_req("T3", 3, "F1"), _mock_req("T4", 3, "F1"),
+        _mock_req("T5", 1, "F2"), _mock_req("T6", 1, "F2"),
+        _mock_req("T7", 4, "F2"), _mock_req("T8", 4, "F2"),
     ],
     "min_gap_days": 1,
     "blackout_dates": [],
@@ -164,7 +162,7 @@ MOCK_AVAILABILITY_MODEL = {
     "coach": [
         {"team": "Foxes", "weekdays": [4], "date_from": "", "date_to": "",
          "start_time": "17:00", "end_time": "18:00"},
-        {"team": "Badgers", "weekdays": [4], "date_from": "", "date_to": "",
+        {"team": "Herons", "weekdays": [4], "date_from": "", "date_to": "",
          "start_time": "17:00", "end_time": "18:00"},
     ],
     "notes": ["Mock mode: sample ground hours and coach windows, not read from your upload."],
@@ -428,15 +426,16 @@ def _coach_busy() -> list[Busy]:
     from datetime import datetime as _dt, timedelta as _td
 
     tz = ZoneInfo(TZ)
-    start_t = time.fromisoformat(COACH["unavailable_from"])
-    end_t = time.fromisoformat(COACH["unavailable_until"])
-    weekday = int(COACH["unavailable_weekday"])
     busy: list[Busy] = []
     day = date.fromisoformat(CLUB["season_start"])
     last = date.fromisoformat(CLUB["season_end"])
     while day <= last:
-        if day.weekday() == weekday:
-            for team_id in COACH["teams"]:
+        for coach in COACHES:
+            if day.weekday() != int(coach["unavailable_weekday"]):
+                continue
+            start_t = time.fromisoformat(coach["unavailable_from"])
+            end_t = time.fromisoformat(coach["unavailable_until"])
+            for team_id in coach["teams"]:
                 busy.append(
                     Busy(
                         resource=f"team:{team_id}",
@@ -470,26 +469,26 @@ def club_problem(extra_busy: list[Busy] | None = None) -> Problem:
 
 
 def mock_verify_hook(problem: Problem):  # type: ignore[no-untyped-def]
-    """Host-style hook: the coach's Wednesday evening is team busy time."""
+    """Host-style hook: each coach's unavailable evening is team busy time."""
     tz = ZoneInfo(problem.timezone)
-    coach_teams = set(COACH["teams"])
-    day = int(COACH["unavailable_weekday"])
-    start_t = time.fromisoformat(COACH["unavailable_from"])
-    end_t = time.fromisoformat(COACH["unavailable_until"])
+    windows = [
+        (set(c["teams"]), int(c["unavailable_weekday"]),
+         time.fromisoformat(c["unavailable_from"]), time.fromisoformat(c["unavailable_until"]))
+        for c in COACHES
+    ]
 
     def hook(events):  # type: ignore[no-untyped-def]
         busy: list[Busy] = []
         for event in events:
-            if event.team_id not in coach_teams:
-                continue
             local = event.starts_at.astimezone(tz)
-            if local.weekday() != day:
-                continue
-            evening_start = local.replace(hour=start_t.hour, minute=start_t.minute, second=0, microsecond=0)
-            evening_end = local.replace(hour=end_t.hour, minute=end_t.minute, second=0, microsecond=0)
-            if event.starts_at < evening_end and evening_start < event.ends_at:
-                busy.append(Busy(resource=f"team:{event.team_id}", start=evening_start,
-                                 end=evening_end, reason="coach unavailable"))
+            for coach_teams, day, start_t, end_t in windows:
+                if event.team_id not in coach_teams or local.weekday() != day:
+                    continue
+                evening_start = local.replace(hour=start_t.hour, minute=start_t.minute, second=0, microsecond=0)
+                evening_end = local.replace(hour=end_t.hour, minute=end_t.minute, second=0, microsecond=0)
+                if event.starts_at < evening_end and evening_start < event.ends_at:
+                    busy.append(Busy(resource=f"team:{event.team_id}", start=evening_start,
+                                     end=evening_end, reason="coach unavailable"))
         return busy
 
     return hook
@@ -538,7 +537,16 @@ app = FastAPI(title="SquadRoot Schedule Agent demo")
 
 @app.get("/api/club")
 def get_club() -> dict:
-    """Demo club data, presets and coach note for the page."""
+    """Demo club data, presets and coach notes for the page."""
+    coaches = [
+        {
+            "id": c.get("id", ""), "label": c.get("label", "Coach"),
+            "teams": [TEAM_NAMES.get(t, t) for t in c["teams"]],
+            "back_to_back": [[TEAM_NAMES.get(t, t) for t in pair] for pair in c.get("back_to_back", [])],
+            "note": c["note"],
+        }
+        for c in COACHES
+    ]
     return {
         "club": CLUB["club"],
         "timezone": TZ,
@@ -547,7 +555,8 @@ def get_club() -> dict:
         "teams": [{"id": t["id"], "name": t["name"], "languages": LANGUAGES_BY_TEAM[t["id"]]}
                   for t in CLUB["teams"]],
         "fields": CLUB["fields"],
-        "coach_note": COACH["note"],
+        "coaches": coaches,
+        "coach_note": " ".join(c["note"] for c in COACHES),
         "presets": CLUB["presets"],
     }
 
@@ -565,6 +574,7 @@ def demo_calendar() -> dict:
         "season_end": CLUB["season_end"],
         "team_count": len(CLUB["teams"]),
         "field_count": len(CLUB["fields"]),
+        "coach_count": len(COACHES),
     }
 
 
