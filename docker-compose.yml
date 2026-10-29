@@ -1,0 +1,16 @@
+# Run the demo with Docker:  docker compose up --build
+# Then open http://127.0.0.1:8000 (Mock mode needs no key).
+#
+# Live mode: copy .env.example to .env in this same folder and fill in
+# your keys. Compose picks that .env up automatically (env_file below)
+# and passes the values into the container process. The .env file is
+# never copied into the image (.dockerignore excludes it), so secrets
+# stay out of `docker build` output and out of git.
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false

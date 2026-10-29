@@ -239,6 +239,15 @@ def test_errors_are_readable(monkeypatch: pytest.MonkeyPatch) -> None:
         api_notices({"mode": "mock", "events": []})
 
 
+def test_dotenv_found_via_env_file_and_compose() -> None:
+    """Docker path: compose auto-loads .env; the app also honours $ENV_FILE."""
+    import pathlib
+
+    compose = pathlib.Path(__file__).parent.parent / "docker-compose.yml"
+    text = compose.read_text(encoding="utf-8")
+    assert "env_file:" in text and ".env" in text and "8000:8000" in text
+
+
 def test_dotenv_file_is_picked_for_meta(
     monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """A key stored only in ROOT/.env must satisfy meta mode (no export needed)."""
@@ -246,6 +255,22 @@ def test_dotenv_file_is_picked_for_meta(
         monkeypatch.delenv(var, raising=False)
     (tmp_path / ".env").write_text("MODEL_API_KEY=test-key-123\n", encoding="utf-8")
     monkeypatch.setattr(app_main, "ROOT", tmp_path)
+    try:
+        assert callable(make_chat("meta"))
+    finally:
+        for var in ("MODEL_API_KEY", "META_MODEL_API_BASE", "META_MODEL"):
+            os.environ.pop(var, None)
+
+
+def test_dotenv_via_env_file_variable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """A .env outside the repo (pointed to by $ENV_FILE) also works."""
+    for var in ("MODEL_API_KEY", "META_MODEL_API_BASE", "META_MODEL"):
+        monkeypatch.delenv(var, raising=False)
+    outside = tmp_path / "elsewhere.env"
+    outside.write_text("MODEL_API_KEY=outside-key-456\n", encoding="utf-8")
+    monkeypatch.setattr(app_main, "ROOT", tmp_path / "no-repo-here")
+    monkeypatch.setenv("ENV_FILE", str(outside))
     try:
         assert callable(make_chat("meta"))
     finally:

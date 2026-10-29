@@ -75,29 +75,56 @@ _DOTENV_ALLOWLIST = frozenset(
 )
 
 
-def _load_dotenv() -> None:
-    """Fill allowlisted vars from ROOT/.env without overriding real env.
+def _dotenv_candidates() -> list[Path]:
+    """Where a .env may live, best first: $ENV_FILE, cwd, repo root, parents.
 
-    The library reads only os.environ (no file I/O by design), so the
-    demo app does the .env loading here. Runs on every mode lookup so
-    editing .env does not require re-importing the app.
+    Plain runs use the repo root; Docker passes keys through the process
+    environment (compose ``env_file``), so the file may sit in the
+    working directory or a parent of the repo instead.
     """
-    try:
-        text = (ROOT / ".env").read_text(encoding="utf-8")
-    except OSError:
-        return
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    found: list[Path] = []
+    explicit = os.environ.get("ENV_FILE") or os.environ.get("DOTENV_PATH")
+    if explicit:
+        found.append(Path(explicit).expanduser())
+    cwd = Path.cwd()
+    found += [ROOT / ".env", cwd / ".env"]
+    for parent in (cwd, *cwd.parents):
+        candidate = parent / ".env"
+        if candidate not in found:
+            found.append(candidate)
+    for parent in ROOT.parents:
+        candidate = parent / ".env"
+        if candidate not in found:
+            found.append(candidate)
+    return found
+
+
+def _load_dotenv() -> None:
+    """Fill allowlisted vars from the first readable .env found.
+
+    Never overrides variables already in the real environment (Docker
+    compose / ``--env-file`` wins). The library reads only os.environ
+    (no file I/O by design), so the demo app does the loading here.
+    Runs on every mode lookup so editing .env needs no re-import.
+    """
+    for path in _dotenv_candidates():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
             continue
-        var, _, value = line.partition("=")
-        var = var.strip()
-        if var in _DOTENV_ALLOWLIST:
-            # Strip quotes and trailing comments ("KEY=abc # comment").
-            cleaned = value.strip().strip("\"'")
-            cleaned = cleaned.split("#", 1)[0].strip().strip("\"'")
-            if cleaned:
-                os.environ.setdefault(var, cleaned)
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            var, _, value = line.partition("=")
+            var = var.strip()
+            if var in _DOTENV_ALLOWLIST:
+                # Strip quotes and trailing comments ("KEY=abc # comment").
+                cleaned = value.strip().strip("\"'")
+                cleaned = cleaned.split("#", 1)[0].strip().strip("\"'")
+                if cleaned:
+                    os.environ.setdefault(var, cleaned)
+        return  # first readable .env wins; do not merge several files
 
 def _mock_req(alias: str, day: int, field_alias: str) -> dict:
     """One mock practice: weekly, 60 minutes, evenings, on one field."""

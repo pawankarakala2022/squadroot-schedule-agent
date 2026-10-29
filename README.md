@@ -103,14 +103,28 @@ separate requirements file — `pyproject.toml` is the source of truth.
 
 ### Run it with Docker (no local Python needed)
 
+Easiest — Compose picks your `.env` up automatically:
+
+```powershell
+docker compose up --build   # demo at http://127.0.0.1:8000
+```
+
+Put `.env` next to `docker-compose.yml` (the repo root): Compose passes
+it into the container via `env_file`, so live mode works with no extra
+flags. Mock mode needs no key and no `.env` at all. The `.env` file is
+never copied into the image (`.dockerignore` excludes it, so secrets
+cannot leak into a built image) — it is read at container start only.
+If your `.env` lives somewhere else, point `ENV_FILE` at it
+(`ENV_FILE=C:\path\to\.env docker compose up --build`), or run plain
+Docker with an explicit file:
+
 ```powershell
 docker build -t squadroot-schedule-agent .
 docker run --rm squadroot-schedule-agent python -m pytest -q   # offline tests
-docker run --rm -p 8000:8000 squadroot-schedule-agent          # demo at http://127.0.0.1:8000
+docker run --rm -p 8000:8000 --env-file .env squadroot-schedule-agent   # demo, live keys from .env
 ```
 
-Mock mode needs no key. For live mode add `--env-file .env` to the demo
-command (never commit `.env`).
+(never commit `.env`).
 
 ### How judges should run this
 
