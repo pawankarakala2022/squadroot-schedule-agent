@@ -56,3 +56,4 @@ One line per piece of work: date (ET), what was built, who / what wrote it.
 - 2026-10-28: Cancel no-match error now echoes the interpreted filter (team/field/day/dates/type + notes) via _describe_filter, so a miss like type 'session' explains itself; regression test; 153 pytest green. (Muse Code)
 - 2026-10-28: Extended demo season to 2026-10-01..2026-12-31 so mock plans cover Oct/Dec incl. Thu Oct 29; 153 pytest green. (Muse Code)
 - 2026-10-28: Single entry point for any wording: schedule_agent/router.py (Route + parse_route_intent), ScheduleAgent.handle dispatch, POST /api/run + Smart Run button, request-aware mock dates/teams; 166 pytest green, v4.1.0. (Muse Code)
+- 2026-10-29: Demo asset demo/tournament_email.png (+ HTML source): fictional phone email screenshot of Greyhawks Fall Cup, Sat Nov 14, four 45-min games on North/South Field, for the vision add-games demo prompt; 193 pytest green. (Claude Code)
