@@ -5,52 +5,64 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Riverside Youth Club — Schedule Agent demo</title>
 <style>
-:root { --green: #157347; --dark: #14532d; --red: #b02a37; --red-bg: #fdebec; --ink: #212529; --muted: #5f6b73; --line: #d6dde2; }
+:root { --green: #157347; --dark: #14532d; --red: #b02a37; --red-bg: #fdebec; --ink: #1c2429; --muted: #55636c; --line: #cfd8dd; }
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #fff; }
-main { max-width: 46rem; margin: 0 auto; padding: 1rem; }
-h1 { font-size: 1.3rem; margin: 0.4rem 0; }
-h2 { font-size: 1.05rem; margin: 1.4rem 0 0.4rem; }
-h3 { font-size: 0.95rem; margin: 0.8rem 0 0.3rem; }
-p, li { line-height: 1.45; }
+html { scroll-behavior: smooth; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 17px; color: var(--ink); background: #f2f5f3; }
+main { max-width: 52rem; margin: 0 auto; padding: 0 1rem 3rem; }
+h1 { font-size: 1.35rem; margin: 0.6rem 0 0.2rem; }
+h2 { font-size: 1.15rem; margin: 0 0 0.5rem; }
+h3 { font-size: 1rem; margin: 1.1rem 0 0.4rem; }
+p, li { line-height: 1.55; }
+section.tab { background: #fff; border: 1px solid var(--line); border-radius: 0.7rem; padding: 1rem; margin: 0.9rem 0; scroll-margin-top: 4.2rem; }
+.step-num { display: inline-block; background: var(--green); color: #fff; border-radius: 50%; width: 1.7rem; height: 1.7rem; line-height: 1.7rem; text-align: center; font-size: 0.95rem; margin-right: 0.4rem; }
+nav.tabs { position: sticky; top: 0; z-index: 20; display: flex; gap: 0.4rem; background: #fff; border-bottom: 2px solid var(--green); padding: 0.5rem 0; }
+nav.tabs a { flex: 1; text-align: center; text-decoration: none; color: var(--ink); font-weight: 700; padding: 0.65rem 0.3rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #f4f6f7; }
+nav.tabs a.active { background: var(--green); color: #fff; border-color: var(--green); }
+nav.tabs a small { display: block; font-weight: 400; font-size: 0.78rem; }
 .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0; }
-button, select { min-height: 2.75rem; font-size: 1rem; }
-button { padding: 0.55rem 0.9rem; border-radius: 0.5rem; border: 1px solid var(--line); background: #f4f6f7; cursor: pointer; text-align: left; }
-button.primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 700; width: 100%; text-align: center; }
+button, select { min-height: 2.9rem; font-size: 1rem; }
+button { padding: 0.6rem 0.95rem; border-radius: 0.5rem; border: 1px solid var(--line); background: #f4f6f7; cursor: pointer; }
+button.primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 700; width: 100%; text-align: center; font-size: 1.05rem; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
-textarea { width: 100%; min-height: 5rem; font-size: 1rem; padding: 0.6rem; border-radius: 0.5rem; border: 1px solid var(--line); }
-pre { white-space: pre-wrap; background: #f4f6f7; padding: 0.6rem; border-radius: 0.5rem; overflow-x: auto; }
-.chip { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 1rem; font-size: 0.85rem; margin: 0.1rem; }
+textarea { width: 100%; min-height: 5.5rem; font-size: 1.05rem; padding: 0.65rem; border-radius: 0.5rem; border: 1px solid var(--line); }
+pre { white-space: pre-wrap; background: #f4f6f7; padding: 0.65rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.92rem; }
+.chip { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 1rem; font-size: 0.85rem; margin: 0.1rem; }
 .ok { background: #d1e7dd; color: #0f5132; }
-.bad, .conflict-chip { background: var(--red-bg); color: #842029; border: 1px solid #f1aeb5; }
-.muted { color: var(--muted); font-size: 0.92rem; }
-.hint { color: var(--muted); font-size: 0.88rem; margin: 0.15rem 0 0; }
-#error { background: var(--red-bg); color: #842029; padding: 0.6rem; border-radius: 0.5rem; border: 1px solid #f1aeb5; }
-.card { border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.7rem; margin: 0.6rem 0; background: #fff; }
-.card strong { display: block; }
-.day { margin: 0.5rem 0; padding: 0.5rem; border: 1px solid var(--line); border-radius: 0.5rem; }
-.day ul { margin: 0.3rem 0; padding-left: 1.2rem; }
-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin: 0.4rem 0; }
-td, th { border: 1px solid var(--line); padding: 0.3rem 0.4rem; text-align: left; vertical-align: top; }
+.bad { background: var(--red-bg); color: #842029; border: 1px solid #f1aeb5; }
+.muted { color: var(--muted); font-size: 0.93rem; }
+.hint { color: var(--muted); font-size: 0.9rem; margin: 0.2rem 0 0; }
+#error { background: var(--red-bg); color: #842029; padding: 0.65rem; border-radius: 0.5rem; border: 1px solid #f1aeb5; margin: 0.6rem 0; }
+.card { border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.75rem; margin: 0.6rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; margin: 0.4rem 0; }
+td, th { border: 1px solid var(--line); padding: 0.35rem 0.45rem; text-align: left; vertical-align: top; }
 tr.changed td { background: var(--red-bg); }
 tr.cancelled td { background: var(--red-bg); color: #842029; text-decoration: line-through; }
 tr.conflict td { background: var(--red-bg); border-color: #f1aeb5; }
 li.changed, li.conflict { background: var(--red-bg); border-radius: 0.35rem; padding: 0.15rem 0.35rem; }
+details.week, details.more { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.35rem 0.6rem; margin: 0.45rem 0; background: #fbfcfb; }
+details.week > summary, details.more > summary { cursor: pointer; font-weight: 700; padding: 0.45rem 0; }
+details.week ul { margin: 0.3rem 0 0.5rem; padding-left: 1.25rem; }
 .notice { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.6rem; margin: 0.5rem 0; }
-details { margin: 0.6rem 0; }
-summary { cursor: pointer; min-height: 2.2rem; }
-#working { display: flex; gap: 0.6rem; align-items: center; background: #e7f3ec; border: 1px solid var(--green); color: var(--dark); padding: 0.6rem; border-radius: 0.5rem; margin: 0.5rem 0; font-weight: 600; }
+#working { display: flex; gap: 0.6rem; align-items: center; background: #e7f3ec; border: 1px solid var(--green); color: var(--dark); padding: 0.65rem; border-radius: 0.5rem; margin: 0.6rem 0; font-weight: 600; }
 #working[hidden] { display: none; }
 .spinner { width: 1.1rem; height: 1.1rem; flex: none; border-radius: 50%; border: 3px solid #bcd8c6; border-top-color: var(--green); animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
-.legend span { margin-right: 0.8rem; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } html { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
 <main>
 <h1 id="club">Schedule Agent demo</h1>
 <p class="muted" id="club-sub">Ask in words, review every change in red, then approve. Nothing is applied until you approve.</p>
+<nav class="tabs" aria-label="Steps">
+<a href="#plan" data-tab="plan" class="active">1 · Plan<small>words, voice, photos</small></a>
+<a href="#review" data-tab="review">2 · Review<small>what will change</small></a>
+<a href="#approve" data-tab="approve">3 · Approve<small>confirm &amp; notify</small></a>
+</nav>
+
+<section class="tab" id="plan">
+<h2><span class="step-num">1</span>Plan — tell the agent what you need</h2>
 <div class="row">
 <label for="mode">Model:</label>
 <select id="mode">
@@ -61,14 +73,14 @@ summary { cursor: pointer; min-height: 2.2rem; }
 <span class="muted" id="mode-note"></span>
 </div>
 
-<h2>1. Your club right now</h2>
+<h3>Your club right now (November 2026)</h3>
 <p class="muted" id="club-facts">Loading the demo club…</p>
-<div class="row"><button id="reset-btn" type="button">Reload sample schedule — November 2026</button></div>
-<p class="hint">This is the saved schedule the club is using now. New proposals below are compared against it before you approve.</p>
 <div id="current-calendar" class="muted">Loading…</div>
+<div class="row"><button id="reset-btn" type="button">Reload sample schedule</button></div>
+<p class="hint">This saved schedule is what new proposals are compared against in Review.</p>
 
-<h2>2. What do you want to do?</h2>
-<label for="request"><strong>Write it in your own words</strong></label>
+<h3>Write it in your own words</h3>
+<label class="muted" for="request">Type a request, or use voice / a photo below — then press the green button.</label>
 <textarea id="request" placeholder="e.g. Foxes practice twice a week after 5pm, or: Cancel all Thursday sessions, or: Rain Thursday Nov 12, North Field is closed"></textarea>
 <div class="row">
 <button id="preset-plan" type="button">Example: build a schedule</button>
@@ -78,69 +90,80 @@ summary { cursor: pointer; min-height: 2.2rem; }
 <p class="hint">Examples only fill the box above. Nothing runs until you press the green button.</p>
 <button id="run-btn" type="button" class="primary">Create schedule / Apply my wording →</button>
 <div id="working" hidden role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="working-text">Working… your schedule is being created. Please wait — do not press the button again.</span></div>
-<p class="hint">Recommended. One button for everything: a new plan, a move, a cancellation or an extra session. The app works out which one you mean. Review the red changes in step 3 before approving.</p>
+<p class="hint">One button for everything: a new plan, a move, a cancellation or an extra session. The app works out which one you mean.</p>
 
-<h3>Add information with a photo or voice note (optional)</h3>
+<details class="more" id="inputs-more">
+<summary>Or add a photo / voice note instead (optional)</summary>
 <div class="card">
-<strong>Read ground &amp; coach photo</strong>
-<p class="hint">Use for a ground-booking sheet or notice: ground names and hours, coach-unavailable times, and which teams they affect. Matched rows block time in the next schedule. Unmatched rows are reported, never guessed.</p>
+<strong>Ground &amp; coach photo</strong>
+<p class="hint">A ground-booking sheet or notice: ground hours, coach-unavailable times, and which teams they affect. Matched rows block time in the next schedule; unmatched rows are reported, never guessed.</p>
 <div class="row"><input type="file" id="availability-file" accept="image/*"><button id="availability-btn" type="button">Read ground &amp; coach photo →</button></div>
 <div id="availability"></div>
 </div>
 <div class="card">
-<strong>Read league games photo</strong>
-<p class="hint">Use for a printed games list (date, time, teams, field). Matched games block time so practices fit around them.</p>
+<strong>League games photo</strong>
+<p class="hint">A printed games list (date, time, teams, field). Matched games block time so practices fit around them.</p>
 <div class="row"><input type="file" id="vision-file" accept="image/*"><button id="vision-btn" type="button">Read games photo →</button></div>
 <div id="games"></div>
 </div>
 <div class="card">
-<strong>Speak instead of typing</strong>
+<strong>Voice note</strong>
 <p class="hint">Choose a WAV voice note. The words appear in the box above; then press the green button.</p>
 <div class="row"><input type="file" id="voice-file" accept="audio/*"><button id="voice-btn" type="button">Type it for me (voice) →</button></div>
 </div>
+</details>
 
-<details>
+<details class="more">
 <summary>Advanced — run exactly one action (only if the green button picked the wrong one)</summary>
-<div class="row"><button id="plan-btn" type="button">Plan only — build a fresh schedule from the words above</button></div>
-<div class="row"><button id="revise-btn" type="button">Revise draft — change the proposal in step 3, keep the rest</button></div>
-<div class="row"><button id="reschedule-btn" type="button">Move sessions only — for rain or a closed field, using the calendar in step 1</button></div>
-<div class="row"><button id="cancel-btn" type="button">Cancel sessions only — remove matched sessions, keep the rest exactly as they are</button></div>
-<div class="row"><button id="rain-set-btn" type="button">Rain demo, step 1 — set the sample calendar</button><button id="rain-day-btn" type="button">Rain demo, step 2 — rain day (move Thursday)</button></div>
+<div class="row"><button id="plan-btn" type="button">Plan only — build a fresh schedule</button></div>
+<div class="row"><button id="revise-btn" type="button">Revise draft — change the proposal in Review, keep the rest</button></div>
+<div class="row"><button id="reschedule-btn" type="button">Move sessions only — rain or a closed field</button></div>
+<div class="row"><button id="cancel-btn" type="button">Cancel sessions only — keep the rest exactly as they are</button></div>
+<div class="row"><button id="rain-set-btn" type="button">Rain demo, step 1 — set the sample calendar</button><button id="rain-day-btn" type="button">Rain demo, step 2 — rain day</button></div>
 </details>
 <div id="error" hidden></div>
+</section>
 
-<h2>3. Review before you approve</h2>
+<section class="tab" id="review">
+<h2><span class="step-num">2</span>Review — check every change before it counts</h2>
 <div id="clarify" hidden></div>
-<p class="legend muted"><span><span class="chip bad">Red</span> = changed, cancelled, or a conflict to fix.</span><span>Plain rows have not changed.</span></p>
+<p class="muted"><span class="chip bad">Red</span> = changed, cancelled, or a conflict to fix. Plain rows have not changed. Weeks start minimized — tap a week to see its sessions.</p>
 <h3>What will change</h3>
-<div id="diff" class="muted">No proposal yet. Your current schedule is in step 1; after you run step 2, every move and cancellation appears here in red.</div>
-<h3>Proposal summary</h3>
+<div id="diff" class="muted">No proposal yet. Write a request in Plan and press the green button — every move and cancellation appears here in red.</div>
+<h3>Summary</h3>
 <pre id="summary" class="muted">No proposal yet.</pre>
-<h3>Proposed schedule (red = changed or conflict)</h3>
+<h3>Proposed schedule</h3>
+<div class="row"><button id="expand-proposed" type="button">Expand all sessions</button><button id="minimize-proposed" type="button">Minimize sessions</button></div>
 <div id="calendar" class="muted">—</div>
 <h3>Checks — conflicts are red and block approval</h3>
 <div id="checks" class="muted">—</div>
 <h3>Could not be placed</h3>
 <div id="shortfalls" class="muted">—</div>
-<div class="row">
-<button id="approve-btn" type="button" class="primary" disabled>Approve this proposal ✓</button>
-</div>
-<p class="hint">Approve only records your decision. The app saves nothing by itself; your club system saves after approval. You can approve only when every check passes.</p>
-<div class="row"><button id="notices-btn" type="button" disabled>Draft family notices — after approval, one per family language</button></div>
-<div id="approval" class="muted"></div>
-<h3>Family notices</h3>
-<div id="notices" class="muted">—</div>
-<details>
+<details class="more">
 <summary>Steps the agent took (for checking its work)</summary>
 <pre id="trace" class="muted">—</pre>
 </details>
-<p class="muted">To change the live calendar afterwards, write the change in step 2, review it here, and approve the new draft.</p>
+</section>
+
+<section class="tab" id="approve">
+<h2><span class="step-num">3</span>Approve — only you can make it count</h2>
+<p class="muted">Approve records your decision. The app saves nothing by itself; your club system saves after approval. You can approve only when every check passes.</p>
+<button id="approve-btn" type="button" class="primary" disabled>Approve this proposal ✓</button>
+<div id="approval" class="muted" style="margin-top:0.5rem"></div>
+<h3>Family notices</h3>
+<p class="hint">After approval, draft one notice per family language from the approved sessions.</p>
+<div class="row"><button id="notices-btn" type="button" disabled>Draft family notices</button></div>
+<div id="notices" class="muted">—</div>
+<p class="muted">To change the schedule afterwards, go back to Plan, write the change, review it here, and approve the new draft.</p>
+</section>
+</main>
 <script>
 "use strict";
-const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], games: null, club: null, approved: false, diff: null };
+const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], games: null, club: null, approved: false, diff: null, busy: false };
 const $ = (id) => document.getElementById(id);
 const DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-function fail(msg) { const e = $("error"); e.hidden = false; e.textContent = msg; }
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fail(msg) { const e = $("error"); e.hidden = false; e.textContent = msg; e.scrollIntoView({ block: "center" }); }
 function clearFail() { $("error").hidden = true; }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function teamName(id) { const t = ((S.club || {}).teams || []).find((x) => x.id === id); return t ? t.name : id; }
@@ -159,55 +182,66 @@ function computeDiff(base, next) {
   const exact = new Map(); next.forEach((e, i) => { const k = key(e); if (!exact.has(k)) exact.set(k, []); exact.get(k).push(i); });
   const unchanged = [], moved = [], cancelled = [];
   base.forEach((b) => { const hit = (exact.get(key(b)) || []).find((i) => !used[i]); if (hit !== undefined) { used[hit] = true; unchanged.push(b); } });
-  const restBase = base.filter((b) => !unchanged.includes(b));
-  restBase.forEach((b) => {
+  base.filter((b) => !unchanged.includes(b)).forEach((b) => {
     let best = -1, bestGap = Infinity;
     next.forEach((n, i) => { if (used[i] || n.team_id !== b.team_id || n.event_type !== b.event_type || n.title !== b.title) return; const gap = Math.abs(Date.parse(n.starts_at) - Date.parse(b.starts_at)); if (gap < bestGap) { bestGap = gap; best = i; } });
     if (best >= 0) { used[best] = true; moved.push({ before: b, after: next[best] }); } else cancelled.push(b);
   });
-  const added = next.filter((_, i) => !used[i]);
-  return { unchanged, moved, cancelled, added };
+  return { unchanged, moved, cancelled, added: next.filter((_, i) => !used[i]) };
 }
 function failedIndexes(p) { const s = new Set(); (p.check_results || []).filter((c) => !c.passed).forEach((c) => s.add(c.event_index)); return s; }
+function mondayOf(dateStr) { const [y, m, d] = dateStr.split("-").map(Number); const dt = new Date(Date.UTC(y, m - 1, d)); dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7)); return dt.toISOString().slice(0, 10); }
+function weekTitle(mon, count) { const [y, m, d] = mon.split("-").map(Number); return "Week of " + DAY[0] + " " + d + " " + MONTH[m - 1] + " · " + count + " session" + (count === 1 ? "" : "s"); }
+function weeksHtml(events, mark) {
+  const weeks = {}; events.forEach((e, i) => { const w = mondayOf(e.starts_at.slice(0, 10)); (weeks[w] = weeks[w] || []).push([e, i]); });
+  return Object.keys(weeks).sort().map((w) => {
+    const items = weeks[w]; const anyMarked = items.some(([e, i]) => mark && mark(e, i));
+    const rows = items.map(([e, i]) => { const m = mark ? mark(e, i) : ""; return "<li class=\"" + m + "\">" + esc(fmt(e) + (m === "conflict" ? " · CONFLICT" : (m === "changed" ? " · CHANGED" : ""))) + "</li>"; }).join("");
+    return "<details class=\"week\"" + (anyMarked ? " open" : "") + "><summary>" + esc(weekTitle(w, items.length)) + (anyMarked ? " — includes changes/conflicts" : "") + "</summary><ul>" + rows + "</ul></details>";
+  }).join("");
+}
+function setWeeks(box, open) { box.querySelectorAll("details.week").forEach((d) => { d.open = open; }); }
 function showProposal(p, trace, clarification) {
   S.base = S.events.length ? S.events.slice() : S.current.slice();
   S.proposal = p; S.events = p.events || []; S.approved = false; S.diff = computeDiff(S.base, S.events);
   $("approval").textContent = ""; $("summary").textContent = p.summary || "(no summary)"; $("summary").classList.remove("muted");
   $("trace").textContent = (trace || []).map((s) => JSON.stringify(s)).join("\n") || "—";
   renderClarify(clarification || null); renderDiff(); renderCalendar(); renderChecks(p); renderShortfalls(p); syncButtons();
+  document.getElementById("review").scrollIntoView({ block: "start" });
 }
 function renderClarify(c) {
   const box = $("clarify"); S.clarification = c || null;
   if (!c) { box.hidden = true; box.innerHTML = ""; return; }
   const taken = (c.blockers || []).map((b) => "<li>" + esc(b.title) + " — " + esc(b.when) + " at " + esc(b.field) + "</li>").join("");
-  box.innerHTML = "<div class=\"card\" style=\"border-color:#e0a800;background:#fff8e1\"><strong>Quick question before you approve</strong>" +
+  box.innerHTML = "<div class=\"card\" style=\"border-color:#8a6d00;background:#fff8e1\"><strong>Quick question before you approve</strong>" +
     "<p>" + esc(c.question) + "</p>" + (taken ? "<p>Already scheduled then:</p><ul>" + taken + "</ul>" : "") +
     "<div class=\"row\"><button id=\"clarify-keep\" type=\"button\" class=\"primary\" style=\"width:auto\">Keep the session already at " + esc(c.requested_time) + " and add this one at " + esc(c.placed_time) + "</button></div>" +
     "<div class=\"row\"><button id=\"clarify-change\" type=\"button\">I want other changes — write them for me below</button>" +
     "<button id=\"clarify-discard\" type=\"button\">Don&apos;t add it — discard this proposal</button></div>" +
-    "<p class=\"hint\">Nothing is saved until you approve in step 3, so you can still change your mind.</p></div>";
+    "<p class=\"hint\">Nothing is saved until you approve, so you can still change your mind.</p></div>";
   box.hidden = false;
   $("clarify-keep").addEventListener("click", () => { box.hidden = true; $("approve-btn").scrollIntoView({ block: "center" }); });
   $("clarify-change").addEventListener("click", () => {
     const b = (c.blockers || [])[0];
     $("request").value = b ? ("Move " + b.title + " on " + c.date + " (" + b.when + ", " + b.field + ") to a free time, and keep the new " + c.team + " practice at " + c.placed_time + ".") : ("Change the " + c.team + " practice on " + c.date + " — instead of " + c.placed_time + ", please: ");
-    box.hidden = true; $("request").focus(); $("request").scrollIntoView({ block: "center" });
+    box.hidden = true; document.getElementById("plan").scrollIntoView({ block: "start" }); $("request").focus();
   });
-  $("clarify-discard").addEventListener("click", () => { S.proposal = null; S.events = []; S.diff = null; box.hidden = true; $("summary").textContent = "Proposal discarded. Your current schedule in step 1 is unchanged."; renderDiff(); $("calendar").textContent = "—"; $("checks").textContent = "—"; syncButtons(); });
-  box.scrollIntoView({ block: "center" });
+  $("clarify-discard").addEventListener("click", () => { S.proposal = null; S.events = []; S.diff = null; box.hidden = true; $("summary").textContent = "Proposal discarded. Your current schedule in Plan is unchanged."; renderDiff(); $("calendar").textContent = "—"; $("checks").textContent = "—"; syncButtons(); });
 }
 function renderCurrent() {
   const box = $("current-calendar");
   if (!S.current.length) { box.textContent = "No saved schedule yet."; return; }
-  const byDay = {}; S.current.forEach((e) => { const d = e.starts_at.slice(0, 10); (byDay[d] = byDay[d] || []).push(e); });
-  const days = Object.keys(byDay).sort();
-  box.innerHTML = "<p><strong>" + S.current.length + " sessions</strong> · " + esc(days[0]) + " to " + esc(days[days.length - 1]) + " · " + ((S.club || {}).teams || []).length + " teams</p>" +
-    days.map((d) => "<div class=\"day\"><strong>" + esc(d) + "</strong><ul>" + byDay[d].map((e) => "<li>" + esc(fmt(e)) + "</li>").join("") + "</ul></div>").join("");
+  const days = S.current.map((e) => e.starts_at.slice(0, 10)).sort();
+  box.innerHTML = "<p><strong>" + S.current.length + " sessions</strong> · " + esc(days[0]) + " to " + esc(days[days.length - 1]) + " · " + ((S.club || {}).teams || []).length + " teams · " + (((S.club || {}).coaches || []).length) + " coaches</p>" +
+    "<div class=\"row\"><button id=\"expand-current\" type=\"button\">Expand all sessions</button><button id=\"minimize-current\" type=\"button\">Minimize sessions</button></div>" +
+    "<p class=\"hint\">Sessions are grouped by week and start minimized. Tap a week to expand it.</p>" + weeksHtml(S.current, null);
+  $("expand-current").addEventListener("click", () => setWeeks(box, true));
+  $("minimize-current").addEventListener("click", () => setWeeks(box, false));
 }
 function renderDiff() {
   const box = $("diff"); if (!S.diff) { box.textContent = "No proposal yet."; return; }
   const d = S.diff;
-  let html = "<p>" + d.unchanged.length + " unchanged · <strong>" + d.moved.length + " moving</strong> · <strong>" + d.cancelled.length + " to cancel</strong> · <strong>" + d.added.length + " new</strong>. Nothing is saved until you approve below.</p>";
+  let html = "<p><strong>" + d.unchanged.length + " unchanged · " + d.moved.length + " moving · " + d.cancelled.length + " to cancel · " + d.added.length + " new.</strong> Nothing is saved until you approve.</p>";
   if (d.cancelled.length) html += "<h4>Will be cancelled (red)</h4><table><tr><th>Session to remove</th></tr>" + d.cancelled.map((e) => "<tr class=\"cancelled\"><td>" + esc(fmt(e)) + "</td></tr>").join("") + "</table>";
   if (d.moved.length) html += "<h4>Will move / change (red)</h4><table><tr><th>Now</th><th>Will become</th></tr>" + d.moved.map((m) => "<tr class=\"changed\"><td>" + esc(fmt(m.before)) + "</td><td><strong>" + esc(fmt(m.after)) + "</strong></td></tr>").join("") + "</table>";
   if (d.added.length) html += "<h4>Will be added (red)</h4><table><tr><th>New session</th></tr>" + d.added.map((e) => "<tr class=\"changed\"><td>" + esc(fmt(e)) + "</td></tr>").join("") + "</table>";
@@ -218,23 +252,22 @@ function renderCalendar() {
   const box = $("calendar"); if (!S.events.length) { box.textContent = "—"; return; }
   const bad = failedIndexes(S.proposal || { check_results: [] });
   const changedKeys = new Set(); if (S.diff) { S.diff.moved.forEach((m) => changedKeys.add(key(m.after))); S.diff.added.forEach((e) => changedKeys.add(key(e))); }
-  const byDay = {}; S.events.forEach((e, i) => { const d = e.starts_at.slice(0, 10); (byDay[d] = byDay[d] || []).push([e, i]); });
-  box.innerHTML = Object.keys(byDay).sort().map((d) => "<div class=\"day\"><strong>" + esc(d) + "</strong><ul>" +
-    byDay[d].map(([e, i]) => { const cls = bad.has(i) ? "conflict" : (changedKeys.has(key(e)) ? "changed" : ""); const tag = bad.has(i) ? " · CONFLICT" : (changedKeys.has(key(e)) ? " · CHANGED" : ""); return "<li class=\"" + cls + "\">" + esc(fmt(e) + tag) + "</li>"; }).join("") + "</ul></div>").join("");
+  box.innerHTML = "<p class=\"hint\">Weeks with red changes open automatically. Others start minimized.</p>" + weeksHtml(S.events, (e, i) => bad.has(i) ? "conflict" : (changedKeys.has(key(e)) ? "changed" : ""));
 }
 function renderChecks(p) {
-  const box = $("checks"); const total = p.check_results.length, passed = p.check_results.filter((c) => c.passed).length;
+  const total = p.check_results.length, passed = p.check_results.filter((c) => c.passed).length;
   let html = "<p>" + passed + "/" + total + " checks passed." + (passed < total ? " <span class=\"chip bad\">Conflicts in red — fix them before approving.</span>" : " <span class=\"chip ok\">No conflicts.</span>") + "</p>";
-  p.events.forEach((e, i) => { const bad = p.check_results.filter((c) => c.event_index === i && !c.passed); const chips = bad.length ? bad.map((c) => "<span class=\"chip bad\">" + esc(c.check) + ": " + esc(c.reason) + "</span>").join("") : "<span class=\"chip ok\">all checks passed</span>"; html += "<p class=\"" + (bad.length ? "conflict" : "") + "\"><strong>" + esc(e.title || e.event_type) + "</strong> " + esc(e.starts_at.slice(0, 16)) + "<br>" + chips + "</p>"; });
-  box.innerHTML = html;
+  const badOnly = p.events.map((e, i) => [e, i]).filter(([e, i]) => p.check_results.some((c) => c.event_index === i && !c.passed));
+  if (badOnly.length) html += badOnly.map(([e, i]) => "<p class=\"conflict\"><strong>" + esc(e.title || e.event_type) + "</strong> " + esc(e.starts_at.slice(0, 16)) + "<br>" + p.check_results.filter((c) => c.event_index === i && !c.passed).map((c) => "<span class=\"chip bad\">" + esc(c.check) + ": " + esc(c.reason) + "</span>").join("") + "</p>").join("");
+  else if (p.events.length) html += "<p class=\"muted\">Every session passed every check. Open the agent steps below if you want the full detail.</p>";
+  $("checks").innerHTML = html;
 }
 function renderShortfalls(p) { $("shortfalls").innerHTML = p.shortfalls.length ? "<ul>" + p.shortfalls.map((s) => "<li>" + esc(teamName(s.team_id)) + " " + esc(s.event_type) + ": " + esc(s.reason) + "</li>").join("") + "</ul>" : "None — everything asked for was placed."; }
 function syncButtons() { const failed = S.proposal ? S.proposal.check_results.filter((c) => !c.passed).length : 1; $("approve-btn").disabled = !S.proposal || failed > 0; $("notices-btn").disabled = !S.approved; }
 function paintSteps(steps) { $("trace").textContent = steps.length ? steps.join("\n") : "Working…"; }
 const RUN_BUTTONS = ["run-btn", "plan-btn", "revise-btn", "reschedule-btn", "cancel-btn", "rain-set-btn", "rain-day-btn"];
 function setBusy(on, stage) {
-  S.busy = on;
-  $("working").hidden = !on;
+  S.busy = on; $("working").hidden = !on;
   if (stage) $("working-text").textContent = stage;
   const btn = $("run-btn");
   if (on) { if (!btn.dataset.label) btn.dataset.label = btn.textContent; btn.textContent = "Working… creating your schedule, please wait"; }
@@ -259,54 +292,61 @@ async function runStream(kind, payload) {
   throw new Error("The stream ended without a result.");
 }
 async function run(kind) {
-  if (S.busy) return; // already working: ignore extra presses
+  if (S.busy) return;
   clearFail(); setBusy(true, "Working… your request is being processed. Please wait — do not press the button again.");
   const request = $("request").value; const calendar = S.events.length ? S.events : S.current;
   try {
     if (kind === "run") { const payload = { request, games: S.games, extra_busy: S.extraBusy }; if (S.proposal) payload.proposal = S.proposal; if (calendar.length) payload.events = calendar; await runStream(kind, payload); }
     if (kind === "plan") await runStream(kind, { request, games: S.games, extra_busy: S.extraBusy });
-    if (kind === "revise") { if (!S.proposal) throw new Error("Create a proposal first, then revise it."); await runStream(kind, { proposal: S.proposal, request, extra_busy: S.extraBusy }); }
+    if (kind === "revise") { if (!S.proposal) throw new Error("Create a proposal first (Plan), then revise it in Review."); await runStream(kind, { proposal: S.proposal, request, extra_busy: S.extraBusy }); }
     if (kind === "reschedule") { if (!calendar.length) throw new Error("There is no calendar yet — set one first."); await runStream(kind, { events: calendar, request, extra_busy: S.extraBusy }); }
     if (kind === "cancel") { if (!calendar.length) throw new Error("There is no calendar yet — set one first."); await runStream(kind, { events: calendar, request }); }
   } catch (err) { fail(err.message); } finally { setBusy(false); }
 }
 async function approve() {
-  clearFail(); try { if (!S.proposal) throw new Error("Nothing to approve yet."); const j = await post("/api/approve", { proposal: S.proposal }); S.approved = true; S.current = S.events.slice(); renderCurrent(); syncButtons(); $("approval").textContent = j.result.message + " Current schedule above is now the approved one. (The demo saves nothing itself — a host club system would save now.)"; } catch (err) { fail(err.message); }
+  clearFail(); try { if (!S.proposal) throw new Error("Nothing to approve yet."); const j = await post("/api/approve", { proposal: S.proposal }); S.approved = true; S.current = S.events.slice(); renderCurrent(); syncButtons(); $("approval").textContent = j.result.message + " Current schedule in Plan is now the approved one. (The demo saves nothing itself — a host club system would save now.)"; $("approval").scrollIntoView({ block: "center" }); } catch (err) { fail(err.message); }
 }
 async function notices() {
   clearFail(); try { if (!S.approved) throw new Error("Approve the proposal first — notices draft from approved sessions."); const j = await post("/api/notices", { events: S.events }); $("notices").innerHTML = j.notices.notices.map((n) => "<div class=\"notice\"><strong>" + esc(n.language) + "</strong> " + (n.verified ? "<span class=\"chip ok\">verified</span>" : "<span class=\"chip bad\">missing: " + esc(n.missing.join(", ")) + "</span>") + "<p>" + esc(n.text) + "</p></div>").join("") + (j.notices.notes.length ? "<p class=\"muted\">Notes: " + esc(j.notices.notes.join(" ")) + "</p>" : ""); } catch (err) { fail(err.message); }
 }
 async function transcribe() {
-  clearFail(); try { const f = $("voice-file").files[0]; if (!f) throw new Error("Choose an audio file first."); const fd = new FormData(); fd.append("mode", S.mode); fd.append("audio", f); const r = await fetch("/api/voice", { method: "POST", body: fd }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || "Transcription failed."); $("request").value = j.transcript; if (j.mock) fail("Mock mode: sample words loaded in the box above — press the green button to run them."); } catch (err) { fail(err.message); }
+  clearFail(); try { const f = $("voice-file").files[0]; if (!f) throw new Error("Choose an audio file first."); const fd = new FormData(); fd.append("mode", S.mode); fd.append("audio", f); const r = await fetch("/api/voice", { method: "POST", body: fd }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || "Transcription failed."); $("request").value = j.transcript; if (j.mock) fail("Mock mode: sample words loaded in the box in Plan — press the green button to run them."); } catch (err) { fail(err.message); }
 }
 async function readAvailability() {
-  clearFail(); try { const f = $("availability-file").files[0]; if (!f) throw new Error("Choose a ground / coach photo first."); const fd = new FormData(); fd.append("mode", S.mode); fd.append("image", f); const r = await fetch("/api/availability", { method: "POST", body: fd }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || "Could not read the photo."); S.extraBusy = j.busy || []; const a = j.availability; const grow = a.grounds.map((g) => "<tr class=\"" + (g.matched ? "" : "changed") + "\"><td>" + esc(g.field) + "</td><td>" + esc(g.weekdays.map((d) => DAY[d]).join(", ")) + "</td><td>" + esc((g.open_from || "?").slice(0, 5)) + "–" + esc((g.open_until || "?").slice(0, 5)) + "</td><td>" + (g.matched ? "will block other times" : esc(g.note || "not matched")) + "</td></tr>").join(""); const crow = a.coach.map((c) => "<tr class=\"" + (c.matched ? "" : "changed") + "\"><td>" + esc(c.team) + "</td><td>" + esc(c.weekdays.length ? c.weekdays.map((d) => DAY[d]).join(", ") : "dates in photo") + "</td><td>" + esc((c.start || "?").slice(0, 5)) + "–" + esc((c.end || "?").slice(0, 5)) + "</td><td>" + (c.matched ? "unavailable" : esc(c.note || "not matched")) + "</td></tr>").join(""); $("availability").innerHTML = "<p><strong>" + j.team_count + " teams in this club.</strong> Teams seen in photo: " + esc(j.teams_seen.join(", ") || "none") + " · " + j.busy_count + " blocked times will be used next time you press the green button.</p><h4>Grounds (booking hours)</h4><table><tr><th>Ground</th><th>Days</th><th>Hours</th><th>Result</th></tr>" + grow + "</table><h4>Coach unavailable</h4><table><tr><th>Team</th><th>Days</th><th>Time</th><th>Result</th></tr>" + crow + "</table>" + (j.mock ? "<p class=\"muted\">" + esc(j.note) + "</p>" : "") + (a.notes && a.notes.length ? "<p class=\"muted\">Notes: " + esc(a.notes.join(" ")) + "</p>" : "") + "<p class=\"hint\">Now write your schedule request in step 2 (or keep the example) and press the green button. Ground hours and coach times from this photo will be respected.</p>"; } catch (err) { fail(err.message); }
+  clearFail(); try { const f = $("availability-file").files[0]; if (!f) throw new Error("Choose a ground / coach photo first."); const fd = new FormData(); fd.append("mode", S.mode); fd.append("image", f); const r = await fetch("/api/availability", { method: "POST", body: fd }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || "Could not read the photo."); S.extraBusy = j.busy || []; const a = j.availability; const grow = a.grounds.map((g) => "<tr class=\"" + (g.matched ? "" : "changed") + "\"><td>" + esc(g.field) + "</td><td>" + esc(g.weekdays.map((d) => DAY[d]).join(", ")) + "</td><td>" + esc((g.open_from || "?").slice(0, 5)) + "–" + esc((g.open_until || "?").slice(0, 5)) + "</td><td>" + (g.matched ? "will block other times" : esc(g.note || "not matched")) + "</td></tr>").join(""); const crow = a.coach.map((c) => "<tr class=\"" + (c.matched ? "" : "changed") + "\"><td>" + esc(c.team) + "</td><td>" + esc(c.weekdays.length ? c.weekdays.map((d) => DAY[d]).join(", ") : "dates in photo") + "</td><td>" + esc((c.start || "?").slice(0, 5)) + "–" + esc((c.end || "?").slice(0, 5)) + "</td><td>" + (c.matched ? "unavailable" : esc(c.note || "not matched")) + "</td></tr>").join(""); $("availability").innerHTML = "<p><strong>" + j.team_count + " teams in this club.</strong> Teams seen in photo: " + esc(j.teams_seen.join(", ") || "none") + " · " + j.busy_count + " blocked times will be used next time you press the green button.</p><h4>Grounds (booking hours)</h4><table><tr><th>Ground</th><th>Days</th><th>Hours</th><th>Result</th></tr>" + grow + "</table><h4>Coach unavailable</h4><table><tr><th>Team</th><th>Days</th><th>Time</th><th>Result</th></tr>" + crow + "</table>" + (j.mock ? "<p class=\"muted\">" + esc(j.note) + "</p>" : "") + (a.notes && a.notes.length ? "<p class=\"muted\">Notes: " + esc(a.notes.join(" ")) + "</p>" : "") + "<p class=\"hint\">Now press the green button in Plan. Ground hours and coach times from this photo will be respected, then check Review.</p>"; } catch (err) { fail(err.message); }
 }
 async function readPhoto() {
-  clearFail(); try { const f = $("vision-file").files[0]; if (!f) throw new Error("Choose a photo first."); const fd = new FormData(); fd.append("mode", S.mode); fd.append("image", f); const r = await fetch("/api/vision", { method: "POST", body: fd }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || "Could not read the photo."); S.games = j.schedule; const rows = j.schedule.games.map((g) => "<tr class=\"" + (g.matched ? "" : "changed") + "\"><td>" + esc(g.date || "?") + "</td><td>" + esc((g.start || "?").slice(0, 5)) + "</td><td>" + esc(g.home) + " v " + esc(g.away) + "</td><td>" + esc(g.field) + "</td><td>" + (g.matched ? "will block time" : esc(g.note || "not matched")) + "</td></tr>").join(""); $("games").innerHTML = "<table><tr><th>Date</th><th>Start</th><th>Game</th><th>Field</th><th>Result</th></tr>" + rows + "</table>" + (j.mock ? "<p class=\"muted\">" + esc(j.note) + "</p>" : "") + "<div class=\"row\"><button id=\"games-plan-btn\" type=\"button\">Plan around these games — press the green button in step 2 after this, or press here</button></div>"; $("games-plan-btn").addEventListener("click", () => run("plan")); } catch (err) { fail(err.message); }
+  clearFail(); try { const f = $("vision-file").files[0]; if (!f) throw new Error("Choose a photo first."); const fd = new FormData(); fd.append("mode", S.mode); fd.append("image", f); const r = await fetch("/api/vision", { method: "POST", body: fd }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || "Could not read the photo."); S.games = j.schedule; const rows = j.schedule.games.map((g) => "<tr class=\"" + (g.matched ? "" : "changed") + "\"><td>" + esc(g.date || "?") + "</td><td>" + esc((g.start || "?").slice(0, 5)) + "</td><td>" + esc(g.home) + " v " + esc(g.away) + "</td><td>" + esc(g.field) + "</td><td>" + (g.matched ? "will block time" : esc(g.note || "not matched")) + "</td></tr>").join(""); $("games").innerHTML = "<table><tr><th>Date</th><th>Start</th><th>Game</th><th>Field</th><th>Result</th></tr>" + rows + "</table>" + (j.mock ? "<p class=\"muted\">" + esc(j.note) + "</p>" : "") + "<div class=\"row\"><button id=\"games-plan-btn\" type=\"button\">Plan around these games</button></div>"; $("games-plan-btn").addEventListener("click", () => run("plan")); } catch (err) { fail(err.message); }
 }
-async function loadCalendar() { const r = await fetch("/api/calendar"); const j = await r.json(); S.current = j.events || []; S.events = []; S.proposal = null; S.diff = null; renderCurrent(); $("diff").textContent = "No proposal yet. Your current schedule is in step 1; after you run step 2, every move and cancellation appears here in red."; syncButtons(); }
+async function loadCalendar() { const r = await fetch("/api/calendar"); const j = await r.json(); S.current = j.events || []; S.events = []; S.proposal = null; S.diff = null; renderCurrent(); $("diff").textContent = "No proposal yet. Write a request in Plan and press the green button — every move and cancellation appears here in red."; syncButtons(); }
+function initTabs() {
+  const links = Array.from(document.querySelectorAll("nav.tabs a"));
+  const setActive = (id) => links.forEach((a) => a.classList.toggle("active", a.dataset.tab === id));
+  links.forEach((a) => a.addEventListener("click", () => setActive(a.dataset.tab)));
+  const obs = new IntersectionObserver((entries) => { entries.forEach((en) => { if (en.isIntersecting) setActive(en.target.id); }); }, { rootMargin: "-30% 0px -60% 0px" });
+  ["plan", "review", "approve"].forEach((id) => obs.observe(document.getElementById(id)));
+}
 async function init() {
   const r = await fetch("/api/club"); S.club = await r.json(); $("club").textContent = S.club.club + " — Schedule Agent demo";
-  $("club-sub").textContent = "Season " + S.club.season_start + " to " + S.club.season_end + " (" + S.club.timezone + "). Ask in words, review every change in red, then approve.";
+  $("club-sub").textContent = "Season " + S.club.season_start + " to " + S.club.season_end + " (" + S.club.timezone + "). Use the tabs above: Plan, then Review, then Approve.";
   $("club-facts").textContent = S.club.teams.length + " teams: " + S.club.teams.map((t) => t.name).join(", ") + " · " + (S.club.coaches || []).length + " coaches, back-to-back pairs: " + (S.club.coaches || []).map((c) => c.label + " (" + c.back_to_back.map((p) => p.join(" → ")).join("; ") + ")").join(" · ") + " · " + S.club.fields.length + " fields: " + S.club.fields.map((f) => f.name + " " + f.open_from + "–" + f.open_until).join(", ") + " · " + S.club.coach_note;
-  await loadCalendar();
+  await loadCalendar(); initTabs();
   $("mode").addEventListener("change", (e) => { S.mode = e.target.value; setModeNote(); }); setModeNote();
-  $("preset-plan").addEventListener("click", () => { $("request").value = S.club.presets.plan_request; });
-  $("preset-rain").addEventListener("click", () => { $("request").value = S.club.presets.rain_request; });
-  $("preset-cancel").addEventListener("click", () => { $("request").value = S.club.presets.cancel_request; });
+  $("preset-plan").addEventListener("click", () => { $("request").value = S.club.presets.plan_request; $("request").focus(); });
+  $("preset-rain").addEventListener("click", () => { $("request").value = S.club.presets.rain_request; $("request").focus(); });
+  $("preset-cancel").addEventListener("click", () => { $("request").value = S.club.presets.cancel_request; $("request").focus(); });
   $("run-btn").addEventListener("click", () => run("run")); $("plan-btn").addEventListener("click", () => run("plan"));
   $("revise-btn").addEventListener("click", () => run("revise")); $("reschedule-btn").addEventListener("click", () => run("reschedule")); $("cancel-btn").addEventListener("click", () => run("cancel"));
   $("rain-set-btn").addEventListener("click", async () => { $("request").value = S.club.presets.plan_request; await run("plan"); });
   $("rain-day-btn").addEventListener("click", async () => { $("request").value = S.club.presets.rain_request; await run("reschedule"); });
   $("reset-btn").addEventListener("click", () => loadCalendar().catch((e) => fail(e.message)));
+  $("expand-proposed").addEventListener("click", () => setWeeks($("calendar"), true));
+  $("minimize-proposed").addEventListener("click", () => setWeeks($("calendar"), false));
   $("approve-btn").addEventListener("click", approve); $("notices-btn").addEventListener("click", notices);
   $("voice-btn").addEventListener("click", transcribe); $("vision-btn").addEventListener("click", readPhoto); $("availability-btn").addEventListener("click", readAvailability);
   syncButtons();
 }
 init().catch((e) => fail(e.message));
 </script>
-</main>
 </body>
 </html>
-

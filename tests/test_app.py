@@ -210,6 +210,10 @@ def test_frontend_shows_current_diff_and_simple_primary() -> None:
     assert 'id="run-btn"' in html and "Create schedule / Apply my wording" in html
     assert 'id="current-calendar"' in html and 'id="diff"' in html
     assert 'id="availability-btn"' in html and "Read ground &amp; coach photo" in html
+    # Pinned tabs scroll to Plan / Review / Approve; sessions collapse by week.
+    assert 'href="#plan"' in html and 'href="#review"' in html and 'href="#approve"' in html
+    assert "position: sticky" in html and "Expand all sessions" in html and "Minimize sessions" in html
+    assert "Week of " in html and 'details class=' in html
     assert "Will be cancelled (red)" in html and "CONFLICT" in html
     # Waiting signal: spinner banner appears and the button locks while running.
     assert 'id="working"' in html and 'class="spinner"' in html
