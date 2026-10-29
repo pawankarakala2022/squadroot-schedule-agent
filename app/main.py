@@ -494,6 +494,103 @@ def mock_verify_hook(problem: Problem):  # type: ignore[no-untyped-def]
     return hook
 
 
+def _clock(value) -> str:  # type: ignore[no-untyped-def]
+    """Wall-clock label like 5:00 PM for questions a manager reads."""
+    hour = value.hour % 12 or 12
+    return f"{hour}:{value.minute:02d} {'AM' if value.hour < 12 else 'PM'}"
+
+
+def _add_clarification(problem: Problem, before: list, proposal) -> dict | None:  # type: ignore[no-untyped-def]
+    """Question to ask when an add lands somewhere other than asked for.
+
+    The solver never picks a wrong time on purpose: it shifts only when
+    the asked-for slot is already booked, or the team already trains
+    that day. Either way the manager must see the existing session and
+    choose, instead of the second session appearing silently.
+    Returns None when the add landed exactly as asked.
+    """
+    from datetime import timedelta
+
+    tz = ZoneInfo(problem.timezone)
+    field_names = {f.id: f.name for f in problem.fields}
+
+    def _key(e) -> tuple:  # type: ignore[no-untyped-def]
+        return (e.team_id, e.field_id, e.event_type, e.title, e.starts_at, e.ends_at)
+
+    before_keys = {_key(e) for e in before}
+    added = [e for e in proposal.events if _key(e) not in before_keys]
+    if not added:
+        return None
+    req_by_team = {r.team_id: r for r in proposal.rules.requirements}
+    for ev in sorted(added, key=lambda e: e.starts_at):
+        req = req_by_team.get(ev.team_id)
+        if req is None or req.earliest_start is None:
+            continue
+        local = ev.starts_at.astimezone(tz)
+        same_team_day = [b for b in before
+                         if b.team_id == ev.team_id and b.starts_at.astimezone(tz).date() == local.date()]
+        win_start = datetime.combine(local.date(), req.earliest_start, tzinfo=tz)
+        win_end = win_start + timedelta(minutes=req.duration_minutes)
+        at_window = [b for b in before
+                     if b.starts_at < win_end and win_start < b.ends_at
+                     and (b.field_id == ev.field_id or b.team_id == ev.team_id)]
+        shifted = local.time() > req.earliest_start
+        if not shifted and not same_team_day:
+            continue
+        blockers, seen = [], set()
+        for b in sorted(same_team_day + at_window, key=lambda e: e.starts_at):
+            if _key(b) in seen:
+                continue
+            seen.add(_key(b))
+            b_local = b.starts_at.astimezone(tz)
+            blockers.append({
+                "team": TEAM_NAMES.get(b.team_id, b.team_id), "title": b.title,
+                "starts_at": b.starts_at.isoformat(), "ends_at": b.ends_at.isoformat(),
+                "when": f"{b_local.date().isoformat()} {_clock(b_local)}–{_clock(b.ends_at.astimezone(tz))}",
+                "field": field_names.get(b.field_id, b.field_id),
+            })
+        team = TEAM_NAMES.get(ev.team_id, ev.team_id)
+        placed = f"{_clock(local)}–{_clock(ev.ends_at.astimezone(tz))}"
+        asked = _clock(req.earliest_start)
+        if same_team_day:
+            first = same_team_day[0].starts_at.astimezone(tz)
+            question = (
+                f"You already have {team} scheduled at {_clock(first)} on {local.date().isoformat()} "
+                f"({blockers[0]['field'] if blockers else field_names.get(ev.field_id, ev.field_id)}). "
+                f"This adds a second {team} practice that day at {placed}. "
+                "Do you want to make any other changes, or keep both sessions?"
+            )
+        else:
+            taken = blockers[0] if blockers else None
+            taken_text = f" by {taken['title']} ({taken['when']})" if taken else ""
+            question = (
+                f"{asked} on {local.date().isoformat()} at {field_names.get(ev.field_id, ev.field_id)} is already "
+                f"taken{taken_text}. "
+                f"{team} was placed at {placed} instead. "
+                "Do you want to make any other changes, or keep it at that time?"
+            )
+        return {
+            "team": team, "date": local.date().isoformat(),
+            "requested_time": asked, "placed_time": placed,
+            "question": question, "blockers": blockers,
+        }
+    return None
+
+
+def _before_events(kwargs: dict) -> list:  # type: ignore[no-untyped-def]
+    """Saved-calendar events a call started from (dicts or ProposedEvents)."""
+    raw = kwargs.get("events")
+    if not raw and isinstance(kwargs.get("proposal"), dict):
+        raw = kwargs["proposal"].get("events")
+    out = []
+    for item in raw or []:
+        try:
+            out.append(item if hasattr(item, "starts_at") else ProposedEvent.from_dict(item))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # type: ignore[no-untyped-def]
     """Run one agent call with the mock coach hook; return proposal + trace."""
     chat = _chat if _chat is not None else make_chat(mode)
@@ -529,7 +626,10 @@ def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # t
         if isinstance(exc, (AgentError, ModelError)):
             raise HTTPException(400, str(exc)) from exc
         raise
-    return {"proposal": proposal.to_dict(), "trace": agent.last_trace}
+    clarification = None
+    if call in ("add", "run") and proposal.summary.startswith("Added "):
+        clarification = _add_clarification(problem, _before_events(kwargs), proposal)
+    return {"proposal": proposal.to_dict(), "trace": agent.last_trace, "clarification": clarification}
 
 
 app = FastAPI(title="SquadRoot Schedule Agent demo")
@@ -745,7 +845,8 @@ def stream_events(call: str, mode: str, base: ChatFn, kwargs: dict):  # type: ig
             else:
                 pending.put({"type": "error", "detail": f"Unexpected error: {exc}"})
             return
-        pending.put({"type": "result", "proposal": out["proposal"], "trace": out["trace"]})
+        pending.put({"type": "result", "proposal": out["proposal"], "trace": out["trace"],
+                     "clarification": out.get("clarification")})
 
     worker = threading.Thread(target=work, daemon=True)
     worker.start()

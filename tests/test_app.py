@@ -168,12 +168,57 @@ def test_availability_photo_mock_blocks_time() -> None:
     assert all(c["passed"] for c in planned["proposal"]["check_results"])
 
 
+def test_add_at_taken_time_asks_before_adding() -> None:
+    """Badgers Thu 5pm is taken, so an 18:00 placement must ask, not silently add."""
+    from datetime import datetime, time as dtime
+    from zoneinfo import ZoneInfo
+
+    from schedule_agent import Proposal, ProposedEvent, Requirement, Rules
+
+    from app.main import _add_clarification, club_problem
+
+    tz = ZoneInfo("America/Toronto")
+    day = "2026-11-19"
+
+    def ev(team: str, field_id: str, start: str, end: str) -> ProposedEvent:
+        return ProposedEvent(team_id=team, field_id=field_id, event_type="practice",
+                             title=f"{team} practice",
+                             starts_at=datetime.fromisoformat(f"{day}T{start}:00").replace(tzinfo=tz),
+                             ends_at=datetime.fromisoformat(f"{day}T{end}:00").replace(tzinfo=tz))
+
+    before = [ev("t3", "f1", "17:00", "18:00")]  # Otters already at 5pm, North
+    added = ev("t2", "f1", "18:00", "19:00")      # Badgers pushed to 6-7pm
+    rules = Rules(requirements=[Requirement(
+        team_id="t2", event_type="practice", sessions_per_week=1, duration_minutes=60,
+        allowed_days=[3], earliest_start=dtime(17, 0), latest_end=dtime(20, 0))])
+    question = _add_clarification(club_problem(), before, Proposal(rules=rules, events=before + [added]))
+    assert question is not None
+    assert "Badgers" in question["question"] and "5:00 PM" in question["question"]
+    assert "6:00" in question["question"] and "Do you want to make any other changes" in question["question"]
+    assert question["blockers"] and question["blockers"][0]["team"] == "Otters"
+
+    # Same team already that day at 5pm, second session at 6pm: also ask.
+    own = [ev("t2", "f1", "17:00", "18:00")]
+    question2 = _add_clarification(club_problem(), own, Proposal(rules=rules, events=own + [added]))
+    assert question2 is not None and "second" in question2["question"]
+
+    # Placed exactly at the requested 5pm with a free day: no question.
+    free = Proposal(rules=rules, events=[ev("t2", "f2", "17:00", "18:00")])
+    assert _add_clarification(club_problem(), before, free) is None
+
+
 def test_frontend_shows_current_diff_and_simple_primary() -> None:
     html = index().path.read_text(encoding="utf-8")
     assert 'id="run-btn"' in html and "Create schedule / Apply my wording" in html
     assert 'id="current-calendar"' in html and 'id="diff"' in html
     assert 'id="availability-btn"' in html and "Read ground &amp; coach photo" in html
     assert "Will be cancelled (red)" in html and "CONFLICT" in html
+    # Waiting signal: spinner banner appears and the button locks while running.
+    assert 'id="working"' in html and 'class="spinner"' in html
+    assert "do not press the button again" in html and "setBusy(true" in html and "setBusy(false)" in html
+    # Clarification: an off-time add asks before anyone can approve it.
+    assert 'id="clarify"' in html and "Quick question before you approve" in html
+    assert "clarify-keep" in html and "clarify-discard" in html
 
 
 def test_mock_voice_and_vision() -> None:

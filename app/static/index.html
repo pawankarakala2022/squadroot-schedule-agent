@@ -39,6 +39,11 @@ li.changed, li.conflict { background: var(--red-bg); border-radius: 0.35rem; pad
 .notice { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.6rem; margin: 0.5rem 0; }
 details { margin: 0.6rem 0; }
 summary { cursor: pointer; min-height: 2.2rem; }
+#working { display: flex; gap: 0.6rem; align-items: center; background: #e7f3ec; border: 1px solid var(--green); color: var(--dark); padding: 0.6rem; border-radius: 0.5rem; margin: 0.5rem 0; font-weight: 600; }
+#working[hidden] { display: none; }
+.spinner { width: 1.1rem; height: 1.1rem; flex: none; border-radius: 50%; border: 3px solid #bcd8c6; border-top-color: var(--green); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 .legend span { margin-right: 0.8rem; }
 </style>
 </head>
@@ -72,6 +77,7 @@ summary { cursor: pointer; min-height: 2.2rem; }
 </div>
 <p class="hint">Examples only fill the box above. Nothing runs until you press the green button.</p>
 <button id="run-btn" type="button" class="primary">Create schedule / Apply my wording →</button>
+<div id="working" hidden role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="working-text">Working… your schedule is being created. Please wait — do not press the button again.</span></div>
 <p class="hint">Recommended. One button for everything: a new plan, a move, a cancellation or an extra session. The app works out which one you mean. Review the red changes in step 3 before approving.</p>
 
 <h3>Add information with a photo or voice note (optional)</h3>
@@ -104,6 +110,7 @@ summary { cursor: pointer; min-height: 2.2rem; }
 <div id="error" hidden></div>
 
 <h2>3. Review before you approve</h2>
+<div id="clarify" hidden></div>
 <p class="legend muted"><span><span class="chip bad">Red</span> = changed, cancelled, or a conflict to fix.</span><span>Plain rows have not changed.</span></p>
 <h3>What will change</h3>
 <div id="diff" class="muted">No proposal yet. Your current schedule is in step 1; after you run step 2, every move and cancellation appears here in red.</div>
@@ -162,12 +169,32 @@ function computeDiff(base, next) {
   return { unchanged, moved, cancelled, added };
 }
 function failedIndexes(p) { const s = new Set(); (p.check_results || []).filter((c) => !c.passed).forEach((c) => s.add(c.event_index)); return s; }
-function showProposal(p, trace) {
+function showProposal(p, trace, clarification) {
   S.base = S.events.length ? S.events.slice() : S.current.slice();
   S.proposal = p; S.events = p.events || []; S.approved = false; S.diff = computeDiff(S.base, S.events);
   $("approval").textContent = ""; $("summary").textContent = p.summary || "(no summary)"; $("summary").classList.remove("muted");
   $("trace").textContent = (trace || []).map((s) => JSON.stringify(s)).join("\n") || "—";
-  renderDiff(); renderCalendar(); renderChecks(p); renderShortfalls(p); syncButtons();
+  renderClarify(clarification || null); renderDiff(); renderCalendar(); renderChecks(p); renderShortfalls(p); syncButtons();
+}
+function renderClarify(c) {
+  const box = $("clarify"); S.clarification = c || null;
+  if (!c) { box.hidden = true; box.innerHTML = ""; return; }
+  const taken = (c.blockers || []).map((b) => "<li>" + esc(b.title) + " — " + esc(b.when) + " at " + esc(b.field) + "</li>").join("");
+  box.innerHTML = "<div class=\"card\" style=\"border-color:#e0a800;background:#fff8e1\"><strong>Quick question before you approve</strong>" +
+    "<p>" + esc(c.question) + "</p>" + (taken ? "<p>Already scheduled then:</p><ul>" + taken + "</ul>" : "") +
+    "<div class=\"row\"><button id=\"clarify-keep\" type=\"button\" class=\"primary\" style=\"width:auto\">Keep the session already at " + esc(c.requested_time) + " and add this one at " + esc(c.placed_time) + "</button></div>" +
+    "<div class=\"row\"><button id=\"clarify-change\" type=\"button\">I want other changes — write them for me below</button>" +
+    "<button id=\"clarify-discard\" type=\"button\">Don&apos;t add it — discard this proposal</button></div>" +
+    "<p class=\"hint\">Nothing is saved until you approve in step 3, so you can still change your mind.</p></div>";
+  box.hidden = false;
+  $("clarify-keep").addEventListener("click", () => { box.hidden = true; $("approve-btn").scrollIntoView({ block: "center" }); });
+  $("clarify-change").addEventListener("click", () => {
+    const b = (c.blockers || [])[0];
+    $("request").value = b ? ("Move " + b.title + " on " + c.date + " (" + b.when + ", " + b.field + ") to a free time, and keep the new " + c.team + " practice at " + c.placed_time + ".") : ("Change the " + c.team + " practice on " + c.date + " — instead of " + c.placed_time + ", please: ");
+    box.hidden = true; $("request").focus(); $("request").scrollIntoView({ block: "center" });
+  });
+  $("clarify-discard").addEventListener("click", () => { S.proposal = null; S.events = []; S.diff = null; box.hidden = true; $("summary").textContent = "Proposal discarded. Your current schedule in step 1 is unchanged."; renderDiff(); $("calendar").textContent = "—"; $("checks").textContent = "—"; syncButtons(); });
+  box.scrollIntoView({ block: "center" });
 }
 function renderCurrent() {
   const box = $("current-calendar");
@@ -204,31 +231,44 @@ function renderChecks(p) {
 function renderShortfalls(p) { $("shortfalls").innerHTML = p.shortfalls.length ? "<ul>" + p.shortfalls.map((s) => "<li>" + esc(teamName(s.team_id)) + " " + esc(s.event_type) + ": " + esc(s.reason) + "</li>").join("") + "</ul>" : "None — everything asked for was placed."; }
 function syncButtons() { const failed = S.proposal ? S.proposal.check_results.filter((c) => !c.passed).length : 1; $("approve-btn").disabled = !S.proposal || failed > 0; $("notices-btn").disabled = !S.approved; }
 function paintSteps(steps) { $("trace").textContent = steps.length ? steps.join("\n") : "Working…"; }
+const RUN_BUTTONS = ["run-btn", "plan-btn", "revise-btn", "reschedule-btn", "cancel-btn", "rain-set-btn", "rain-day-btn"];
+function setBusy(on, stage) {
+  S.busy = on;
+  $("working").hidden = !on;
+  if (stage) $("working-text").textContent = stage;
+  const btn = $("run-btn");
+  if (on) { if (!btn.dataset.label) btn.dataset.label = btn.textContent; btn.textContent = "Working… creating your schedule, please wait"; }
+  else if (btn.dataset.label) btn.textContent = btn.dataset.label;
+  RUN_BUTTONS.forEach((id) => { const b = $(id); if (b) b.disabled = on; });
+  if (!on) syncButtons();
+}
 async function runStream(kind, payload) {
   const r = await fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ mode: S.mode, call: kind }, payload)) });
   if (!r.body) {
     let j; if (kind === "plan") j = await post("/api/plan", payload); if (kind === "revise") j = await post("/api/revise", payload);
     if (kind === "reschedule") j = await post("/api/reschedule", payload); if (kind === "cancel") j = await post("/api/cancel", payload); if (kind === "run") j = await post("/api/run", payload);
-    showProposal(j.proposal, j.trace); return;
+    showProposal(j.proposal, j.trace, j.clarification); return;
   }
   if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error((j && j.detail) || ("Request failed (" + r.status + ")")); }
   const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ""; const steps = []; paintSteps(steps);
   for (;;) { const { done, value } = await reader.read(); if (done) break; buf += dec.decode(value, { stream: true }); let idx;
     while ((idx = buf.indexOf("\n\n")) >= 0) { const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
       for (const line of frame.split("\n")) { if (!line.startsWith("data:")) continue; const evt = JSON.parse(line.slice(5));
-        if (evt.type === "step") { if (evt.phase === "start") steps.push("… " + evt.label); else steps[steps.length - 1] = "✓ " + evt.label + " — " + (evt.latency_ms / 1000).toFixed(1) + "s"; paintSteps(steps); }
-        else if (evt.type === "result") { showProposal(evt.proposal, evt.trace); return; } else if (evt.type === "error") throw new Error(evt.detail || "Request failed"); } } }
+        if (evt.type === "step") { if (evt.phase === "start") { steps.push("… " + evt.label); setBusy(true, "Working… " + evt.label + " — please wait, do not press the button again."); } else { steps[steps.length - 1] = "✓ " + evt.label + " — " + (evt.latency_ms / 1000).toFixed(1) + "s"; setBusy(true, "Working… " + evt.label + " done. Finishing your schedule…"); } paintSteps(steps); }
+        else if (evt.type === "result") { showProposal(evt.proposal, evt.trace, evt.clarification); return; } else if (evt.type === "error") throw new Error(evt.detail || "Request failed"); } } }
   throw new Error("The stream ended without a result.");
 }
 async function run(kind) {
-  clearFail(); const request = $("request").value; const calendar = S.events.length ? S.events : S.current;
+  if (S.busy) return; // already working: ignore extra presses
+  clearFail(); setBusy(true, "Working… your request is being processed. Please wait — do not press the button again.");
+  const request = $("request").value; const calendar = S.events.length ? S.events : S.current;
   try {
     if (kind === "run") { const payload = { request, games: S.games, extra_busy: S.extraBusy }; if (S.proposal) payload.proposal = S.proposal; if (calendar.length) payload.events = calendar; await runStream(kind, payload); }
     if (kind === "plan") await runStream(kind, { request, games: S.games, extra_busy: S.extraBusy });
     if (kind === "revise") { if (!S.proposal) throw new Error("Create a proposal first, then revise it."); await runStream(kind, { proposal: S.proposal, request, extra_busy: S.extraBusy }); }
     if (kind === "reschedule") { if (!calendar.length) throw new Error("There is no calendar yet — set one first."); await runStream(kind, { events: calendar, request, extra_busy: S.extraBusy }); }
     if (kind === "cancel") { if (!calendar.length) throw new Error("There is no calendar yet — set one first."); await runStream(kind, { events: calendar, request }); }
-  } catch (err) { fail(err.message); }
+  } catch (err) { fail(err.message); } finally { setBusy(false); }
 }
 async function approve() {
   clearFail(); try { if (!S.proposal) throw new Error("Nothing to approve yet."); const j = await post("/api/approve", { proposal: S.proposal }); S.approved = true; S.current = S.events.slice(); renderCurrent(); syncButtons(); $("approval").textContent = j.result.message + " Current schedule above is now the approved one. (The demo saves nothing itself — a host club system would save now.)"; } catch (err) { fail(err.message); }
