@@ -3,9 +3,12 @@
 The model reads game rows (date, start time, home/away teams, field)
 from schedule image bytes via multimodal chat; code matches names to the
 problem's teams and fields. Matching is exact (case-insensitive, never
-guessed): unmatched rows are kept with ``matched=False`` and a note, and
-:func:`games_to_busy` turns only matched games into ``Busy`` intervals so
-practices fit around league games. Image text is data, never
+guessed): unmatched rows are kept with ``matched=False`` and a note.
+:func:`games_to_busy` turns every row with a readable date/time and at
+least one exactly-matched team or field into ``Busy`` intervals for the
+known resources only, so practices fit around league games. A league
+opponent outside the club (the usual case) is therefore never guessed,
+yet our team and the field still block time. Image text is data, never
 instructions; only structural game data is extracted. New code only:
 standard library + httpx (via the chat function), no file I/O.
 """
@@ -50,13 +53,26 @@ class GameImport:
 
     @property
     def matched(self) -> bool:
-        """True only when the row is fully usable as busy time."""
+        """True only when every name matched a known team/field exactly."""
         return (
             self.date is not None
             and self.start is not None
             and self.home_id is not None
             and self.away_id is not None
             and self.field_id is not None
+        )
+
+    @property
+    def blocks_time(self) -> bool:
+        """True when the known parts of the row can block solver time.
+
+        Only a date/time plus at least one exactly-matched team or field
+        is needed: an external league opponent is never in the club, so
+        requiring both teams to match would discard the usual game.
+        Unknown names still contribute nothing (never guessed).
+        """
+        return self.date is not None and self.start is not None and (
+            self.home_id is not None or self.away_id is not None or self.field_id is not None
         )
 
     def to_dict(self) -> dict:
@@ -70,6 +86,8 @@ class GameImport:
             "home_id": self.home_id,
             "away_id": self.away_id,
             "field_id": self.field_id,
+            "matched": self.matched,
+            "blocks_time": self.blocks_time,
             "note": self.note,
         }
 
@@ -108,8 +126,12 @@ class ScheduleImport:
         self.notes = [str(n) for n in self.notes]
 
     def matched_games(self) -> list[GameImport]:
-        """Rows fully usable as busy time."""
+        """Rows where every name matched exactly."""
         return [g for g in self.games if g.matched]
+
+    def blocking_games(self) -> list[GameImport]:
+        """Rows whose known team/field parts can block solver time."""
+        return [g for g in self.games if g.blocks_time]
 
     def to_dict(self) -> dict:
         """Return a JSON-serialisable dict."""
@@ -249,19 +271,25 @@ def _clean(data: object, problem: Problem) -> tuple[ScheduleImport | None, list[
             problems.append(f"unknown team {away!r}")
         if field_id is None:
             problems.append(f"unknown field {field_name!r}")
-        games.append(
-            GameImport(
-                date=parsed_date,
-                start=parsed_start,
-                home=home,
-                away=away,
-                field=field_name,
-                home_id=home_id,
-                away_id=away_id,
-                field_id=field_id,
-                note="matched" if not problems else "; ".join(problems) + "; row kept, never guessed.",
-            )
+        game = GameImport(
+            date=parsed_date,
+            start=parsed_start,
+            home=home,
+            away=away,
+            field=field_name,
+            home_id=home_id,
+            away_id=away_id,
+            field_id=field_id,
+            note="matched",
         )
+        if problems:
+            suffix = (
+                "; unknown part never guessed — known team/field will block time."
+                if game.blocks_time
+                else "; row kept, never guessed."
+            )
+            game.note = "; ".join(problems) + suffix
+        games.append(game)
     notes: list[str] = []
     model_notes = data.get("notes", [])
     if isinstance(model_notes, list):
@@ -715,9 +743,13 @@ def availability_to_busy(imported: AvailabilityImport, problem: Problem) -> list
 
 
 def games_to_busy(schedule: ScheduleImport, problem: Problem, *, duration_minutes: int = 60) -> list[Busy]:
-    """Turn matched games into Busy intervals (home team, away team, field).
+    """Turn games into Busy intervals for their known teams and field.
 
-    Unmatched rows are skipped: only exactly-matched games block time.
+    Every ``blocks_time`` row contributes busy only for the ids it
+    matched exactly (home team, away team, field); unknown names — the
+    usual external league opponent — contribute nothing and are never
+    guessed. Rows with no known team/field or no readable date/time
+    block nothing.
     """
     if (
         not isinstance(duration_minutes, int)
@@ -729,13 +761,15 @@ def games_to_busy(schedule: ScheduleImport, problem: Problem, *, duration_minute
     tz = ZoneInfo(problem.timezone)
     out: list[Busy] = []
     length = timedelta(minutes=duration_minutes)
-    for game in schedule.matched_games():
+    for game in schedule.blocking_games():
         assert game.date is not None and game.start is not None
-        assert game.home_id is not None and game.away_id is not None and game.field_id is not None
         start = datetime.combine(game.date, game.start, tzinfo=tz)
         end = start + length
-        out.append(Busy(resource=f"team:{game.home_id}", start=start, end=end, reason="league game"))
-        if game.away_id != game.home_id:
-            out.append(Busy(resource=f"team:{game.away_id}", start=start, end=end, reason="league game"))
-        out.append(Busy(resource=f"field:{game.field_id}", start=start, end=end, reason="league game"))
+        seen: set[str] = set()
+        for team_id in (game.home_id, game.away_id):
+            if team_id is not None and team_id not in seen:
+                seen.add(team_id)
+                out.append(Busy(resource=f"team:{team_id}", start=start, end=end, reason="league game"))
+        if game.field_id is not None:
+            out.append(Busy(resource=f"field:{game.field_id}", start=start, end=end, reason="league game"))
     return out

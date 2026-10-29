@@ -103,7 +103,30 @@ def test_close_names_never_guessed_bad_rows_kept() -> None:
     assert schedule.games[0].home_id is None and "U12 Fox" in schedule.games[0].note
     assert schedule.games[1].field_id is None and "Centre" in schedule.games[1].note
     assert schedule.games[2].date is None and schedule.games[2].start is None
-    assert games_to_busy(schedule, _problem()) == []  # unmatched rows block nothing
+    # Unknown names are never guessed, but exactly-known parts still block:
+    # row 1 blocks U14 Badgers + North, row 2 blocks both teams, row 3 nothing.
+    assert [g.blocks_time for g in schedule.games] == [True, True, False]
+    busy = games_to_busy(schedule, _problem())
+    assert {(b.resource, b.start.hour) for b in busy} == {
+        ("team:t2", 17), ("field:f1", 17), ("team:t1", 17),
+    }
+
+
+def test_external_opponent_games_block_our_team_and_field() -> None:
+    """League opponents are not club teams: Foxes v Greyhawks still blocks Foxes."""
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        return _payload([_row(home="U12 Foxes", away="Greyhawks Comets")])
+
+    problem = _problem()
+    schedule = extract_games(problem, b"img", chat)
+    (game,) = schedule.games
+    assert game.matched is False and game.blocks_time is True
+    assert game.away_id is None and "Greyhawks Comets" in game.note
+    assert {(b.resource, b.start.isoformat()) for b in games_to_busy(schedule, problem)} == {
+        ("team:t1", "2026-09-14T17:00:00-04:00"),
+        ("field:f1", "2026-09-14T17:00:00-04:00"),
+    }
 
 
 def test_garbage_twice_raises_agent_error() -> None:

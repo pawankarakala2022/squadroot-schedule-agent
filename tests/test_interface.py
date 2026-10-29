@@ -280,6 +280,7 @@ def test_vision_games_become_busy_for_plan() -> None:
     assert len(schedule.games) == 2
     assert schedule.games[0].matched is True
     assert schedule.games[1].matched is False  # unknown team reported, never guessed
+    assert schedule.games[1].blocks_time is True  # known U14 + North still block (v5.0.0)
     assert ScheduleImport.from_dict(json.loads(json.dumps(schedule.to_dict()))) == schedule
     game_busy = next(b for b in games_to_busy(schedule, problem) if b.resource == "team:t1")
     with_games = Problem(
@@ -291,7 +292,10 @@ def test_vision_games_become_busy_for_plan() -> None:
         busy=games_to_busy(schedule, problem),
     )
     proposal = agent.plan(with_games, "U12 practice once a week on Mondays after 5pm", verify=lambda draft: [])
-    assert len(proposal.events) == 2
+    # Sep 7 fits; Sep 14 cannot: the 17:00 game blocks North/t1 and the
+    # 18:00 U14 game (unknown opponent, known team+field) blocks North to 19:00.
+    assert len(proposal.events) == 1
+    assert len(proposal.shortfalls) == 1 and proposal.shortfalls[0].placed == 0
     for event in proposal.events:
         assert not (event.team_id == "t1" and event.starts_at < game_busy.end and game_busy.start < event.ends_at)
     assert all(c.passed for c in proposal.check_results)

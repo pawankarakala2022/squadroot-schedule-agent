@@ -812,18 +812,45 @@ def get_calendar() -> dict:
     return demo_calendar()
 
 
+def _problem_with_games(body: dict) -> tuple[Problem, list[Busy]]:
+    """Club problem plus league-game busy from ``body['games']`` (if any)."""
+    extra = [Busy.from_dict(b) for b in body.get("extra_busy", [])]
+    problem = club_problem(extra)
+    games = body.get("games")
+    if not games:
+        return problem, []
+    game_busy = games_to_busy(ScheduleImport.from_dict(games), problem)
+    return club_problem(extra + game_busy), game_busy
+
+
+def _request_with_games_default(body: dict, game_busy: list[Busy]) -> str:
+    """Request text for plan/run: uploaded games alone are a valid ask.
+
+    "Plan around these games" sends no typed request; with at least one
+    blocking game the club's standard practice request is planned around
+    them instead of failing with "please describe the request". Games
+    that matched nothing block nothing, so that case fails clearly.
+    """
+    request = body.get("request") or ""
+    if isinstance(request, str) and request.strip():
+        return request
+    if game_busy:
+        return str(CLUB["presets"]["plan_request"])
+    if body.get("games"):
+        raise HTTPException(
+            400,
+            "None of those games matched a team or field in this club, so there is "
+            "nothing to plan around. Check the photo names, or type the practice request.",
+        )
+    return request if isinstance(request, str) else ""
+
+
 @app.post("/api/plan")
 def api_plan(body: dict) -> dict:
     """Plan a draft from a request; extra_busy adds host-known busy; games adds league games."""
-    problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
-    games = body.get("games")
-    if games:
-        problem = club_problem(
-            [Busy.from_dict(b) for b in body.get("extra_busy", [])]
-            + games_to_busy(ScheduleImport.from_dict(games), problem)
-        )
+    problem, game_busy = _problem_with_games(body)
     return run_agent(body.get("mode", "mock"), "plan", problem=problem,
-                     request=body.get("request", ""), previous=body.get("previous"))
+                     request=_request_with_games_default(body, game_busy), previous=body.get("previous"))
 
 
 @app.post("/api/revise")
@@ -867,15 +894,9 @@ def api_run(body: dict) -> dict:
     router picks the call. Plan-first safety applies: cancel/reschedule
     with no calendar fails with "no calendar yet".
     """
-    problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
-    games = body.get("games")
-    if games:
-        problem = club_problem(
-            [Busy.from_dict(b) for b in body.get("extra_busy", [])]
-            + games_to_busy(ScheduleImport.from_dict(games), problem)
-        )
+    problem, game_busy = _problem_with_games(body)
     return run_agent(body.get("mode", "mock"), "run", problem=problem,
-                     request=body.get("request", ""), proposal=body.get("proposal"),
+                     request=_request_with_games_default(body, game_busy), proposal=body.get("proposal"),
                      events=body.get("events"), previous=body.get("previous"))
 
 
@@ -906,14 +927,8 @@ def _stream_label(response_format: object) -> str:
 def _stream_kwargs(call: str, body: dict) -> dict:
     """run_agent kwargs for a stream call; mirrors the /api/plan|revise|reschedule|cancel|run bodies."""
     if call == "plan":
-        problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
-        games = body.get("games")
-        if games:
-            problem = club_problem(
-                [Busy.from_dict(b) for b in body.get("extra_busy", [])]
-                + games_to_busy(ScheduleImport.from_dict(games), problem)
-            )
-        return {"problem": problem, "request": body.get("request", ""), "previous": body.get("previous")}
+        problem, game_busy = _problem_with_games(body)
+        return {"problem": problem, "request": _request_with_games_default(body, game_busy), "previous": body.get("previous")}
     if call == "revise":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
         return {"problem": problem, "proposal": body.get("proposal"), "request": body.get("request", "")}
@@ -926,14 +941,8 @@ def _stream_kwargs(call: str, body: dict) -> dict:
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
         return {"problem": problem, "events": body.get("events", []), "request": body.get("request", "")}
     if call == "run":
-        problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
-        games = body.get("games")
-        if games:
-            problem = club_problem(
-                [Busy.from_dict(b) for b in body.get("extra_busy", [])]
-                + games_to_busy(ScheduleImport.from_dict(games), problem)
-            )
-        return {"problem": problem, "request": body.get("request", ""),
+        problem, game_busy = _problem_with_games(body)
+        return {"problem": problem, "request": _request_with_games_default(body, game_busy),
                 "proposal": body.get("proposal"), "events": body.get("events"),
                 "previous": body.get("previous")}
     raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule, cancel, add or run.")
@@ -1077,7 +1086,9 @@ def vision_result(mode: str, data: bytes, mime_type: str | None) -> dict:
     if not data:
         raise HTTPException(400, "No image received.")
     if mode == "mock":
-        return {"schedule": MOCK_GAMES, "mock": True,
+        schedule = {"games": [dict(g, matched=True, blocks_time=True) for g in MOCK_GAMES["games"]],
+                    "notes": list(MOCK_GAMES["notes"])}
+        return {"schedule": schedule, "mock": True,
                 "note": "Mock mode: sample rows, not read from your upload."}
     from schedule_agent import AgentError, ModelError
 

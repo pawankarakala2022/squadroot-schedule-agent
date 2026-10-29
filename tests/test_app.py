@@ -226,6 +226,50 @@ def test_mock_answers_the_request_it_was_given() -> None:
     assert any("Mock mode" in n for n in wolves["proposal"]["rules"]["notes"])
 
 
+def _uploaded_games() -> dict:
+    """The reported upload: our teams vs external Greyhawks opponents, Nov 14."""
+    rows = [
+        ("2026-11-14", "17:00", "Foxes", "t1", "Greyhawks Comets", "North Field", "f1"),
+        ("2026-11-14", "17:00", "Otters", "t3", "Greyhawks Ravens", "South Field", "f2"),
+        ("2026-11-14", "18:00", "Badgers", "t2", "Greyhawks Lynx", "North Field", "f1"),
+        ("2026-11-14", "18:00", "Wolves", "t4", "Greyhawks Thunder", "South Field", "f2"),
+    ]
+    return {"games": [
+        {"date": d, "start": s, "home": home, "away": away, "field": field,
+         "home_id": hid, "away_id": None, "field_id": fid, "matched": False,
+         "blocks_time": True, "note": f"unknown team {away!r}; row kept, never guessed."}
+        for d, s, home, hid, away, field, fid in rows
+    ], "notes": []}
+
+
+def test_plan_around_uploaded_games_with_no_typed_request() -> None:
+    """'Plan around these games' with an empty box plans the standard practices."""
+    planned = api_plan({"mode": "mock", "request": "", "games": _uploaded_games()})
+    assert planned["proposal"]["events"]
+    assert all(c["passed"] for c in planned["proposal"]["check_results"])
+
+    streamed = _collect_stream({"mode": "mock", "call": "plan", "request": "", "games": _uploaded_games()})
+    assert streamed[-1]["type"] == "result" and streamed[-1]["proposal"]["events"]
+
+
+def test_uploaded_games_actually_block_their_slot() -> None:
+    """A Saturday Foxes practice must not land in the Foxes game slot."""
+    planned = api_plan({"mode": "mock", "request": "Foxes practice once a week, 60 minutes, Saturdays after 5pm",
+                        "games": _uploaded_games()})
+    assert all(c["passed"] for c in planned["proposal"]["check_results"])
+    nov14 = [e for e in planned["proposal"]["events"] if e["starts_at"].startswith("2026-11-14")]
+    assert nov14 and all(not e["starts_at"].startswith("2026-11-14T17:00") for e in nov14)
+
+
+def test_plan_around_games_that_matched_nothing_fails_clearly() -> None:
+    games = {"games": [{"date": "2026-11-14", "start": "17:00", "home": "Strangers",
+                        "away": "Visitors", "field": "Elsewhere", "home_id": None,
+                        "away_id": None, "field_id": None, "matched": False,
+                        "blocks_time": False, "note": "unknown"}], "notes": []}
+    with pytest.raises(HTTPException, match="None of those games matched"):
+        api_plan({"mode": "mock", "request": "", "games": games})
+
+
 def test_modes_report_booleans_only() -> None:
     modes = get_club()["modes"]
     assert set(modes) == {"mock", "meta", "open"}

@@ -1,5 +1,27 @@
 # Changelog
 
+## v5.0.0 (2026-10-29)
+
+Breaking (games busy semantics): league games against external
+opponents now block time. `games_to_busy` previously turned only fully
+matched games (both teams and the field in the club) into `Busy`, so
+the usual league row — our team vs an outside opponent such as
+"Greyhawks Comets" — blocked nothing and "plan around these games"
+planned around nothing. It now emits `Busy` for every exactly-matched
+part of a row with a readable date/time: known home/away teams and the
+known field. Unknown names still contribute nothing and are never
+guessed; `GameImport.matched` still means every name matched exactly.
+Additive on top: `GameImport.blocks_time`, `ScheduleImport.blocking_games()`,
+and `matched`/`blocks_time` keys in `GameImport.to_dict()` (old dicts
+still parse). Contract test updated, not weakened: the Sep 14 U14 game
+with an unknown opponent now correctly leaves the U12 Monday practice
+a named shortfall instead of placing it on the occupied field. Demo:
+"Plan around these games" (and `/api/plan` / `/api/run` / stream with
+uploaded games and no typed request) plans the club's standard weekly
+practice request around the games instead of failing with "Please
+describe the scheduling request"; games matching nothing fail with a
+clear "none of those games matched" message.
+
 ## v4.3.0 (2026-10-28)
 
 Additive, backward compatible (new method, new route value, new opt-in
