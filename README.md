@@ -86,6 +86,10 @@ the Docker commands below.
 
 Always run `.venv\Scripts\python`, never bare `python` — bare `python` is
 whatever is first on `PATH` and will report every library as missing.
+Activating instead (`.venv\Scripts\Activate.ps1`, then plain `python`)
+works too, but it is per-terminal, easy to forget in a new window, and
+PowerShell's execution policy blocks `Activate.ps1` on many machines
+("running scripts is disabled") — the explicit path needs none of that.
 Sanity check: `.venv\Scripts\python -c "import httpx, fastapi, uvicorn, pytest; print('ok')"`.
 If the venv itself is broken (e.g. created from the zip Python), delete
 `.venv` and recreate it with the commands above.
