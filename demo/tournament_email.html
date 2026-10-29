@@ -1,0 +1,110 @@
+<!doctype html>
+<!-- Fictional demo data: no real clubs, families or people. Rendered to tournament_email.png. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390">
+<title>Tournament Email</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 390px; background: #fff; color: #111;
+         font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .status { height: 47px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 28px 0 34px; font-weight: 600; font-size: 16px; }
+  .status .icons { display: flex; gap: 6px; align-items: center; }
+  .bars { display: flex; gap: 2px; align-items: flex-end; height: 11px; }
+  .bars i { width: 3px; background: #111; border-radius: 1px; display: block; }
+  .battery { width: 25px; height: 12px; border: 1.5px solid #999; border-radius: 4px; padding: 1.5px; position: relative; }
+  .battery::after { content: ""; position: absolute; right: -4px; top: 3px; width: 2px; height: 4px; background: #999; border-radius: 0 1px 1px 0; }
+  .battery b { display: block; height: 100%; width: 78%; background: #111; border-radius: 1.5px; }
+  .nav { display: flex; justify-content: space-between; align-items: center; padding: 6px 16px 10px;
+         color: #0a7cff; font-size: 17px; }
+  .nav .actions { display: flex; gap: 22px; }
+  .nav svg { width: 22px; height: 22px; stroke: #0a7cff; fill: none; stroke-width: 1.8; }
+  .subject { padding: 4px 16px 12px; font-size: 21px; font-weight: 700; line-height: 1.25; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; background: #eef3ff; color: #3559c7;
+         padding: 2px 7px; border-radius: 5px; margin-left: 4px; vertical-align: 3px; }
+  .from { display: flex; gap: 11px; padding: 10px 16px 12px; border-top: 1px solid #eee; border-bottom: 1px solid #eee; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; background: #5b6dd8; color: #fff;
+            display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex: none; }
+  .from .who { flex: 1; min-width: 0; }
+  .from .name { font-weight: 600; font-size: 15px; display: flex; justify-content: space-between; }
+  .from .name span { font-weight: 400; color: #8a8a8e; font-size: 13px; }
+  .from .to { color: #8a8a8e; font-size: 13px; margin-top: 2px; }
+  .body { padding: 16px 16px 8px; font-size: 15px; line-height: 1.45; }
+  .body p { margin-bottom: 12px; }
+  .card { border: 1px solid #e3e3e8; border-radius: 10px; overflow: hidden; margin: 6px 0 14px; }
+  .card h3 { background: #1f3b73; color: #fff; font-size: 13.5px; padding: 8px 12px; letter-spacing: .2px; }
+  .card h3 small { font-weight: 400; opacity: .85; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-weight: 600; color: #555; background: #f5f6f8; padding: 6px 8px; font-size: 12px; }
+  td { padding: 8px; border-top: 1px solid #eee; vertical-align: top; }
+  td.time { white-space: nowrap; font-weight: 600; }
+  td .vs { color: #8a8a8e; font-size: 12px; }
+  .note { font-size: 13.5px; color: #333; background: #fff8e6; border-left: 3px solid #f0b400;
+          padding: 8px 10px; border-radius: 4px; margin-bottom: 12px; }
+  .sig { color: #444; font-size: 14px; }
+  .sig b { color: #111; }
+  .toolbar { display: flex; justify-content: space-around; padding: 12px 10px 28px; border-top: 1px solid #eee; margin-top: 10px; }
+  .toolbar svg { width: 24px; height: 24px; stroke: #0a7cff; fill: none; stroke-width: 1.8; }
+</style>
+</head>
+<body>
+  <div class="status">
+    <span>9:41</span>
+    <span class="icons">
+      <span class="bars"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:11px"></i></span>
+      <svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 11.5l2.2-2.6a3.2 3.2 0 0 0-4.4 0zM3.3 6.4a7 7 0 0 1 9.4 0l-1.4 1.6a4.9 4.9 0 0 0-6.6 0zM.6 3.4a11 11 0 0 1 14.8 0L14 5a8.8 8.8 0 0 0-12 0z" fill="#111"/></svg>
+      <span class="battery"><b></b></span>
+    </span>
+  </div>
+
+  <div class="nav">
+    <span>&#8249; Inbox</span>
+    <span class="actions">
+      <svg viewBox="0 0 24 24"><path d="M5 4h14v17l-7-4-7 4z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M3 7h18M8 7V4h8v3M6 7l1 14h10l1-14"/></svg>
+      <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
+    </span>
+  </div>
+
+  <div class="subject">Fall Cup – Sat Nov 14 game schedule <span class="tag">Inbox</span></div>
+
+  <div class="from">
+    <div class="avatar">GC</div>
+    <div class="who">
+      <div class="name">Greyhawks Club Tournament Desk <span>Oct 28</span></div>
+      <div class="to">To: Riverside Youth Club &#8250;</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <p>Hi Riverside Youth Club,</p>
+    <p>Thanks for entering the Greyhawks Fall Cup! Here is the confirmed game schedule for your four teams. Every game is <b>45 minutes</b> and is played at your grounds.</p>
+
+    <div class="card">
+      <h3>Saturday, November 14, 2026 <small>&middot; Riverside vs Greyhawks Club</small></h3>
+      <table>
+        <tr><th>Time</th><th>Game</th><th>Ground</th></tr>
+        <tr><td class="time">5:00 PM</td><td>Foxes <span class="vs">vs</span> Greyhawks Comets</td><td>North Field</td></tr>
+        <tr><td class="time">5:00 PM</td><td>Otters <span class="vs">vs</span> Greyhawks Ravens</td><td>South Field</td></tr>
+        <tr><td class="time">6:00 PM</td><td>Badgers <span class="vs">vs</span> Greyhawks Lynx</td><td>North Field</td></tr>
+        <tr><td class="time">6:00 PM</td><td>Wolves <span class="vs">vs</span> Greyhawks Thunder</td><td>South Field</td></tr>
+      </table>
+    </div>
+
+    <div class="note">Please have teams at the field 20 minutes before kick-off. Referees are provided by Greyhawks Club.</div>
+
+    <p>Let us know by Nov 7 if anything needs to change.</p>
+
+    <p class="sig">Cheers,<br><b>Jordan Ellery</b><br>Tournament Coordinator, Greyhawks Club</p>
+  </div>
+
+  <div class="toolbar">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16v12H4zM4 6l8 7 8-7"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M3 4h18v4H3zM5 8v12h14V8M10 12h4"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M10 6L4 12l6 6M4 12h11a5 5 0 0 1 5 5v1"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></svg>
+  </div>
+</body>
+</html>
