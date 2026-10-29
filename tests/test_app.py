@@ -230,6 +230,8 @@ def test_frontend_shows_current_diff_and_simple_primary() -> None:
     assert 'id="current-calendar"' in html and 'id="diff"' in html
     assert 'id="availability-btn"' in html and "Read ground &amp; coach photo" in html
     assert "can be wrong" in html and "modes.meta" in html  # real mode preferred, mock warned
+    assert "Mock has pre-defined questions and answers" in html and 'id="mock-note"' in html
+    assert "Muse Spark via Baseten" in html and "hosted via Baseten" in html
     # Pinned tabs scroll to Plan / Review / Approve; sessions collapse by week.
     assert 'href="#plan"' in html and 'href="#review"' in html and 'href="#approve"' in html
     assert "position: sticky" in html and "Expand all sessions" in html and "Minimize sessions" in html

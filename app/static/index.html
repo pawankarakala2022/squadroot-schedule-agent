@@ -67,10 +67,13 @@ details.week ul { margin: 0.3rem 0 0.5rem; padding-left: 1.25rem; }
 <label for="mode">Model:</label>
 <select id="mode">
 <option value="meta">Meta API — real assistant (recommended)</option>
-<option value="open">Open weights — real assistant</option>
-<option value="mock" selected>Mock — scripted offline demo answers (can be wrong)</option>
+<option value="open">Open weights — Muse Spark via Baseten</option>
+<option value="mock" selected>Mock — pre-defined questions &amp; answers (offline, can be wrong)</option>
 </select>
 <span class="muted" id="mode-note"></span>
+</div>
+<div id="mock-note" hidden style="background:#fff8e1;border:1px solid #8a6d00;border-radius:0.5rem;padding:0.65rem;margin:0.4rem 0">
+<strong>Note:</strong> Mock has pre-defined questions and answers. It does not read your words like the real assistant — the Example buttons and demo presets are scripted, and typed questions can get canned or wrong answers. Add <code>MODEL_API_KEY</code> to <code>.env</code> (or Docker) and choose Meta API for real answers.
 </div>
 
 <h3>Your club right now (November 2026)</h3>
@@ -170,7 +173,7 @@ function teamName(id) { const t = ((S.club || {}).teams || []).find((x) => x.id 
 function fieldName(id) { const f = ((S.club || {}).fields || []).find((x) => x.id === id); return f ? f.name : id; }
 function fmt(e) { return e.starts_at.slice(0, 10) + " " + e.starts_at.slice(11, 16) + "–" + e.ends_at.slice(11, 16) + " · " + (e.title || e.event_type) + " (" + teamName(e.team_id) + ", " + fieldName(e.field_id) + ")"; }
 function key(e) { return [e.team_id, e.field_id, e.event_type, e.title, e.starts_at, e.ends_at].join("|"); }
-function setModeNote() { $("mode-note").textContent = S.mode === "mock" ? "Warning: scripted offline answers for trying the page without a key — they can be wrong and do not understand like the real assistant. Add MODEL_API_KEY in .env (or Docker) and use Meta API for real answers." : "Real assistant using your key in .env. Mock is only an offline fallback."; }
+function setModeNote() { const mock = S.mode === "mock"; $("mock-note").hidden = !mock; $("mode-note").textContent = mock ? "Pre-defined questions and answers only — see the note below." : (S.mode === "open" ? "Muse Spark (open weights) hosted via Baseten, using OPEN_MODEL_API_BASE / OPEN_MODEL_API_KEY from .env." : "Real assistant using your key in .env. Mock is only an offline fallback."); }
 async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ mode: S.mode }, body)) });
   const j = await r.json().catch(() => ({}));
