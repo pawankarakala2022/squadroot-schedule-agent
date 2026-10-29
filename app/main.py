@@ -109,16 +109,14 @@ def _mock_req(alias: str, day: int, field_alias: str) -> dict:
     }
 
 
-# Eight teams, two coaches. Paired teams share a day and field, so the
-# solver's earliest-first search places each pair back-to-back (17:00
-# then 18:00, same field, same coach): Coach 1 Mon/Thu on North,
-# Coach 2 Tue/Fri on South.
+# Four teams, two coaches, November only. Paired teams share a day and
+# field, so the solver's earliest-first search places each pair
+# back-to-back (17:00 then 18:00, same field, same coach): Coach 1 on
+# Mondays, Coach 2 on Thursdays, both on North Field.
 MOCK_RULES = {
     "requirements": [
         _mock_req("T1", 0, "F1"), _mock_req("T2", 0, "F1"),
         _mock_req("T3", 3, "F1"), _mock_req("T4", 3, "F1"),
-        _mock_req("T5", 1, "F2"), _mock_req("T6", 1, "F2"),
-        _mock_req("T7", 4, "F2"), _mock_req("T8", 4, "F2"),
     ],
     "min_gap_days": 1,
     "blackout_dates": [],
@@ -162,7 +160,7 @@ MOCK_AVAILABILITY_MODEL = {
     "coach": [
         {"team": "Foxes", "weekdays": [4], "date_from": "", "date_to": "",
          "start_time": "17:00", "end_time": "18:00"},
-        {"team": "Herons", "weekdays": [4], "date_from": "", "date_to": "",
+        {"team": "Otters", "weekdays": [4], "date_from": "", "date_to": "",
          "start_time": "17:00", "end_time": "18:00"},
     ],
     "notes": ["Mock mode: sample ground hours and coach windows, not read from your upload."],
@@ -680,7 +678,7 @@ def demo_calendar() -> dict:
 
 @app.get("/api/calendar")
 def get_calendar() -> dict:
-    """Current sample schedule for Nov 1 - Dec 31, 2026, shown on page load."""
+    """Current sample schedule for November 2026, shown on page load."""
     return demo_calendar()
 
 
