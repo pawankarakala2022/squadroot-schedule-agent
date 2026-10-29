@@ -9,6 +9,40 @@ human to approve before anything changes.
 
 > Status: in progress for the Meta Global AI Developer Hackathon (Oct 26 - Nov 4, 2026).
 
+## For judges — 60-second proof
+
+This is not a mock-only project. The mock mode exists so anyone can run it without a key;
+the evidence below is from live Meta models.
+
+- **Live eval (2026-10-28):** `muse-spark-1.3` at `api.meta.ai` ran all 25 fictional cases
+  (English, Spanish, Hindi, Punjabi, Vietnamese; tight fields, blackouts, revisions, a
+  prompt-injection request): mean rule accuracy **1.00**, **834/834** checks passed,
+  **25/25** shortfall matches, injection case safe. Full table: [evals/RESULTS.md](evals/RESULTS.md).
+- **Live trace (captured 2026-10-28, demo club preset request, one Meta API call):**
+
+  ```text
+  understand  model=muse-spark-1.3  latency_ms=9468  total_tokens=2348
+  solve       latency_ms=0        checks  latency_ms=0
+  result      27 events placed, 162/162 checks passed, shortfalls named (never hidden)
+  ```
+
+  The solver and checks are deterministic code and take ~0 ms at club scale; only the
+  `understand` step calls the model, and the model never picks times.
+- **Meta models in the loop:** Muse Spark (understanding, schedule-photo reading,
+  explanations, family notices), Muse Voice Transcribe (voice notes), and Muse Spark Open
+  (open weights, same agent). The client refuses any `-contributor` model id.
+- **Offline verification:** `python -m pytest` → **182 passed**, including the public-interface
+  contract test (`tests/test_interface.py`) that a host app depends on.
+- **Open weights (2026-10-28):** the same 25 cases on Muse Spark Open via Baseten
+  (`meta-models/muse-spark-open` at `inference.baseten.co`): mean rule accuracy **0.94**,
+  **834/834** checks, **25/25** shortfalls, mean latency 15.9s/case. The only misses were a
+  duplicated requirement in three blackout cases; placements were unaffected. Both models
+  are side by side in [evals/RESULTS.md](evals/RESULTS.md).
+- **How this was judged internally:** a three-stage judging evaluation (pass/fail
+  viability, 0–10 rubric scoring, live-video final) was run against this repo; its gap
+  checklist drove the work above. The remaining gaps are deployment-free: feedback from
+  volunteer managers and the 3-minute demo video.
+
 ## What was built during the hackathon
 
 **Everything in this repository** was written during the event (from Oct 26, 2026). `docs/BUILD_LOG.md`
@@ -29,15 +63,30 @@ verified entirely from this repo, with fictional demo data.
 
 ## Run it
 
+Requires Python 3.12+. From a fresh clone:
+
 ```powershell
-.venv\Scripts\python -m pip install -e ".[app]"  # once: library + demo web deps
+python -m venv .venv                                       # once
+.venv\Scripts\python -m pip install -e ".[app]"  # library + demo web deps
 .venv\Scripts\python -m pytest        # offline tests (fake models stand in)
 .venv\Scripts\python -m app           # demo web app, then open http://127.0.0.1:8000
 ```
 
-Mock mode needs no API key. For live models, copy `.env.example` to `.env`
-and fill in `MODEL_API_KEY` (Meta API), plus `OPEN_MODEL_API_BASE` /
-`OPEN_MODEL_API_KEY` for the open-weights switch.
+### How judges should run this
+
+- **Replay / sample-data mode (no key, no account):** run the commands above, leave the
+  `Model` dropdown on `Mock`, and use the preset buttons. Everything runs locally with
+  fictional sample data (`demo/club.json`); mock answers are labelled `Mock mode: ...`.
+  Nothing is sent to any API and there is nothing to log in to.
+- **Live mode (repo runs live):** copy `.env.example` to `.env` and fill in
+  `MODEL_API_KEY` (Meta Model API; get a key at `dev.meta.ai`). Restart
+  `python -m app`, set the dropdown to `Meta API (muse-spark)`, and run the same presets.
+  The `Steps (trace)` panel then shows the live model id, latency and tokens. For the
+  open-weights switch, also fill in `OPEN_MODEL_API_BASE` / `OPEN_MODEL_API_KEY` (Baseten)
+  and pick `Open weights`. Step-by-step live setup: [docs/META_API_DEMO.md](docs/META_API_DEMO.md).
+- **Sample media included:** `demo/schedule.png` (league schedule photo for the vision
+  upload) and `demo/voice_note.txt` (the voice-note script; record it as 16 kHz mono WAV
+  with `record_voice_note.html`). Voice and photo also run live in `Meta API` mode.
 
 ## Checking a voice request end to end
 

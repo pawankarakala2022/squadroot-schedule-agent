@@ -11,7 +11,7 @@ The model never picks times. A deterministic solver places events.
   `Disruption`, cancel request to `CancelFilter`, schedule photo to games,
   plan to summary, family notices.
 - `muse-voice-transcribe-1.0`: voice note bytes to request text.
-- `meta-models/muse-spark-open-1026` (Baseten): same agent on open weights.
+- `meta-models/muse-spark-open` (Baseten): same agent on open weights.
 
 Code: [llm.py](../schedule_agent/llm.py), [voice.py](../schedule_agent/voice.py),
 [vision.py](../schedule_agent/vision.py), [demo app](../app/main.py).
@@ -40,9 +40,9 @@ AGENT_MODE=mock
 For the open-weights switch, also fill in:
 
 ```text
-OPEN_MODEL_API_BASE=https://...
+OPEN_MODEL_API_BASE=https://inference.baseten.co/v1
 OPEN_MODEL_API_KEY=YOUR_OPEN_KEY_HERE
-OPEN_MODEL=meta-models/muse-spark-open-1026
+OPEN_MODEL=meta-models/muse-spark-open
 ```
 
 Rules:

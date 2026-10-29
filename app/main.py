@@ -390,7 +390,7 @@ def make_chat(mode: str) -> ChatFn:
         _load_dotenv()
         base = os.environ.get("OPEN_MODEL_API_BASE", "")
         key = os.environ.get("OPEN_MODEL_API_KEY", "")
-        model = os.environ.get("OPEN_MODEL", "") or "meta-models/muse-spark-open-1026"
+        model = os.environ.get("OPEN_MODEL", "") or "meta-models/muse-spark-open"
         if not base or not key:
             raise HTTPException(400, "Open-weights mode needs OPEN_MODEL_API_BASE/KEY in .env (or use Mock mode).")
         return _cached_chat(("open", base, model, key),
