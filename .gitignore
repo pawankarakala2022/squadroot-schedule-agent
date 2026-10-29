@@ -42,3 +42,5 @@ manual_phase*_check.py
 # ...except tiny format fixtures for the offline test suite (tones, not speech)
 !demo/voice_*.wav
 !demo/schedule_tiny.png
+conversation-2026-10-28-202318.txt
+docs/JUDGING_EVALUATION.md
