@@ -1,0 +1,9 @@
+.git
+.venv
+.env
+.pytest_cache
+__pycache__
+*.pyc
+my_note.*
+manual_*.py
+record_voice_note.html

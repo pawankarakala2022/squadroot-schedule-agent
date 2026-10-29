@@ -1,6 +1,6 @@
 # SquadRoot Schedule Agent
 
-A club operations agent for volunteer-run community sports clubs, built on Meta's Muse models.
+A club operations agent for sports clubs, built on Meta's Muse models.
 
 A club manager describes scheduling work in plain words, by voice, or with a photo of the league's
 game schedule, in any language. The agent drafts a conflict-free schedule, proves every event passes
@@ -63,14 +63,39 @@ verified entirely from this repo, with fictional demo data.
 
 ## Run it
 
-Requires Python 3.12+. From a fresh clone:
+Requires Python 3.12+ (a real installer — the zip/embeddable Python has no
+`pip` or `venv` and cannot be used). From a fresh clone:
 
 ```powershell
-python -m venv .venv                                       # once
-.venv\Scripts\python -m pip install -e ".[app]"  # library + demo web deps
-.venv\Scripts\python -m pytest        # offline tests (fake models stand in)
-.venv\Scripts\python -m app           # demo web app, then open http://127.0.0.1:8000
+py -3.12 -m venv .venv                            # once; `py -0p` lists your Pythons
+.venv\Scripts\python -m pip install -e ".[app,test]"
+.venv\Scripts\python -m pytest                    # offline tests (fake models stand in)
+.venv\Scripts\python -m app                       # demo web app, then open http://127.0.0.1:8000
 ```
+
+Always run `.venv\Scripts\python`, never bare `python` — bare `python` is
+whatever is first on `PATH` and will report every library as missing.
+Sanity check: `.venv\Scripts\python -c "import httpx, fastapi, uvicorn, pytest; print('ok')"`.
+If the venv itself is broken (e.g. created from the zip Python), delete
+`.venv` and recreate it with the commands above.
+What gets installed, and why: `httpx` (the library's only runtime
+dependency) plus `tzdata` on Windows only (Windows Python has no system
+timezone database for `zoneinfo`), `fastapi` + `uvicorn` + `python-multipart` (the `[app]`
+demo extra; multipart is required by the voice/photo upload endpoints),
+`pytest` (the `[test]` extra). Everything else is the Python standard library;
+pip resolves transitive dependencies automatically. There is no
+separate requirements file — `pyproject.toml` is the source of truth.
+
+### Run it with Docker (no local Python needed)
+
+```powershell
+docker build -t squadroot-schedule-agent .
+docker run --rm squadroot-schedule-agent python -m pytest -q   # offline tests
+docker run --rm -p 8000:8000 squadroot-schedule-agent          # demo at http://127.0.0.1:8000
+```
+
+Mock mode needs no key. For live mode add `--env-file .env` to the demo
+command (never commit `.env`).
 
 ### How judges should run this
 
@@ -80,7 +105,7 @@ python -m venv .venv                                       # once
   Nothing is sent to any API and there is nothing to log in to.
 - **Live mode (repo runs live):** copy `.env.example` to `.env` and fill in
   `MODEL_API_KEY` (Meta Model API; get a key at `dev.meta.ai`). Restart
-  `python -m app`, set the dropdown to `Meta API (muse-spark)`, and run the same presets.
+  `.venv\Scripts\python -m app`, set the dropdown to `Meta API (muse-spark)`, and run the same presets.
   The `Steps (trace)` panel then shows the live model id, latency and tokens. For the
   open-weights switch, also fill in `OPEN_MODEL_API_BASE` / `OPEN_MODEL_API_KEY` (Baseten)
   and pick `Open weights`. Step-by-step live setup: [docs/META_API_DEMO.md](docs/META_API_DEMO.md).

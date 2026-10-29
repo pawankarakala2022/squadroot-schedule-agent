@@ -5,14 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "squadroot-schedule-agent"
 version = "4.3.0"
-description = "Club operations scheduling agent for volunteer-run community sports clubs."
+description = "Club operations scheduling agent for sports clubs."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
-dependencies = ["httpx"]
+dependencies = ["httpx", "tzdata; sys_platform == 'win32'"]
 
 [project.optional-dependencies]
-app = ["fastapi", "uvicorn"]
+app = ["fastapi", "uvicorn", "python-multipart"]
+test = ["pytest"]
 
 [tool.setuptools.packages.find]
 include = ["schedule_agent*"]
