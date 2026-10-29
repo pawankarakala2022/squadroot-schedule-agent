@@ -150,6 +150,72 @@ MOCK_RULES = {
     "notes": ["Mock mode: the same scripted rules answer every request."],
 }
 
+def _mock_rules_from_request(messages: list) -> dict | None:
+    """Request-aware mock rules: teams/days/times named in the words win.
+
+    Mock mode is a scripted offline stand-in, not the real assistant —
+    but it should still answer the request it was given (the demo
+    presets name teams and days). Returns None when no demo team is
+    named, so the caller falls back to the full-club script.
+    """
+    import re
+
+    text = _mock_request_text(messages)
+    low = text.lower()
+    team_alias = {t["name"].lower(): f"T{i + 1}" for i, t in enumerate(CLUB["teams"])}
+    day_names = {
+        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+        "friday": 4, "saturday": 5, "sunday": 6, "mon": 0, "tue": 1,
+        "tues": 1, "wed": 2, "thu": 3, "thur": 3, "thurs": 3, "fri": 4,
+        "sat": 5, "sun": 6, "mondays": 0, "tuesdays": 1, "wednesdays": 2,
+        "thursdays": 3, "fridays": 4, "saturdays": 5, "sundays": 6,
+    }
+    days_by_alias: dict[str, list[int]] = {}
+    pending: list[str] = []
+    for match in re.finditer(r"[a-z]+", low):
+        word = match.group(0)
+        if word in team_alias and team_alias[word] not in pending:
+            pending.append(team_alias[word])
+        elif word in day_names:
+            for alias in pending:
+                days_by_alias.setdefault(alias, [])
+                if day_names[word] not in days_by_alias[alias]:
+                    days_by_alias[alias].append(day_names[word])
+            pending = []
+    for alias in pending:  # teams named with no day: any day
+        days_by_alias.setdefault(alias, [])
+    if not days_by_alias:
+        return None
+    sessions = 2 if ("twice" in low or "two times" in low) else 1
+    dur_match = re.search(r"(\d{2,3})\s*min", low)
+    duration = min(180, max(15, int(dur_match.group(1)))) if dur_match else 60
+    earliest = "17:00"
+    time_match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", low) or re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", low)
+    if time_match:
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2) or 0)
+        meridiem = time_match.group(3) if time_match.lastindex and time_match.lastindex >= 3 else None
+        if meridiem == "pm" and hour < 12:
+            hour += 12
+        elif meridiem == "am" and hour == 12:
+            hour = 0
+        earliest = f"{hour:02d}:{minute:02d}"
+    latest_hour = min(23, int(earliest[:2]) + 3)
+    requirements = [
+        {
+            "team_alias": alias, "event_type": "game" if " game" in low else "practice",
+            "sessions_per_week": sessions, "duration_minutes": duration,
+            "allowed_days": days, "allowed_field_aliases": [],
+            "earliest_start": earliest, "latest_end": f"{latest_hour:02d}:00", "title": "",
+        }
+        for alias, days in sorted(days_by_alias.items())
+    ]
+    return {
+        "requirements": requirements, "min_gap_days": 1, "blackout_dates": [],
+        "notes": ["Mock mode (scripted, offline): rules read from the teams and days named in your request. Use Meta API mode for real understanding."],
+    }
+
+
 MOCK_DISRUPTION = {
     "date_from": "2026-11-12",
     "date_to": "2026-11-12",
@@ -373,7 +439,7 @@ def mock_chat(messages: list, *, response_format=None, usage_out=None) -> str:
         blob = " ".join(str(m.get("content", "")) for m in messages).lower()
         if "produce only the session(s) this request adds" in blob:
             return json.dumps(MOCK_ADD_GAME)
-        return json.dumps(MOCK_RULES)
+        return json.dumps(_mock_rules_from_request(messages) or MOCK_RULES)
     if name == "disruption":
         return json.dumps(mock_disruption(messages))
     if name == "cancel_filter":
@@ -660,6 +726,16 @@ def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # t
 app = FastAPI(title="SquadRoot Schedule Agent demo")
 
 
+def available_modes() -> dict:
+    """Which model modes can actually run (booleans only, never key values)."""
+    _load_dotenv()
+    return {
+        "mock": True,
+        "meta": ModelConfig.from_env() is not None,
+        "open": bool(os.environ.get("OPEN_MODEL_API_BASE") and os.environ.get("OPEN_MODEL_API_KEY")),
+    }
+
+
 @app.get("/api/club")
 def get_club() -> dict:
     """Demo club data, presets and coach notes for the page."""
@@ -683,6 +759,7 @@ def get_club() -> dict:
         "coaches": coaches,
         "coach_note": " ".join(c["note"] for c in COACHES),
         "presets": CLUB["presets"],
+        "modes": available_modes(),
     }
 
 

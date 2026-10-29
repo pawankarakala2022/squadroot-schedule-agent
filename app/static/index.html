@@ -66,9 +66,9 @@ details.week ul { margin: 0.3rem 0 0.5rem; padding-left: 1.25rem; }
 <div class="row">
 <label for="mode">Model:</label>
 <select id="mode">
-<option value="mock" selected>Mock (no key, try it now)</option>
-<option value="meta">Meta API (live model)</option>
-<option value="open">Open weights (live model)</option>
+<option value="meta">Meta API — real assistant (recommended)</option>
+<option value="open">Open weights — real assistant</option>
+<option value="mock" selected>Mock — scripted offline demo answers (can be wrong)</option>
 </select>
 <span class="muted" id="mode-note"></span>
 </div>
@@ -170,7 +170,7 @@ function teamName(id) { const t = ((S.club || {}).teams || []).find((x) => x.id 
 function fieldName(id) { const f = ((S.club || {}).fields || []).find((x) => x.id === id); return f ? f.name : id; }
 function fmt(e) { return e.starts_at.slice(0, 10) + " " + e.starts_at.slice(11, 16) + "–" + e.ends_at.slice(11, 16) + " · " + (e.title || e.event_type) + " (" + teamName(e.team_id) + ", " + fieldName(e.field_id) + ")"; }
 function key(e) { return [e.team_id, e.field_id, e.event_type, e.title, e.starts_at, e.ends_at].join("|"); }
-function setModeNote() { $("mode-note").textContent = S.mode === "mock" ? "Scripted answers, clearly labelled. No key needed." : "Live model calls. Needs keys in .env."; }
+function setModeNote() { $("mode-note").textContent = S.mode === "mock" ? "Warning: scripted offline answers for trying the page without a key — they can be wrong and do not understand like the real assistant. Add MODEL_API_KEY in .env (or Docker) and use Meta API for real answers." : "Real assistant using your key in .env. Mock is only an offline fallback."; }
 async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ mode: S.mode }, body)) });
   const j = await r.json().catch(() => ({}));
@@ -331,6 +331,10 @@ async function init() {
   $("club-sub").textContent = "Season " + S.club.season_start + " to " + S.club.season_end + " (" + S.club.timezone + "). Use the tabs above: Plan, then Review, then Approve.";
   $("club-facts").textContent = S.club.teams.length + " teams: " + S.club.teams.map((t) => t.name).join(", ") + " · " + (S.club.coaches || []).length + " coaches, back-to-back pairs: " + (S.club.coaches || []).map((c) => c.label + " (" + c.back_to_back.map((p) => p.join(" → ")).join("; ") + ")").join(" · ") + " · " + S.club.fields.length + " fields: " + S.club.fields.map((f) => f.name + " " + f.open_from + "–" + f.open_until).join(", ") + " · " + S.club.coach_note;
   await loadCalendar(); initTabs();
+  // Prefer the real assistant when a key exists; Mock only when offline.
+  const modes = S.club.modes || {};
+  S.mode = modes.meta ? "meta" : (modes.open ? "open" : "mock");
+  $("mode").value = S.mode;
   $("mode").addEventListener("change", (e) => { S.mode = e.target.value; setModeNote(); }); setModeNote();
   $("preset-plan").addEventListener("click", () => { $("request").value = S.club.presets.plan_request; $("request").focus(); });
   $("preset-rain").addEventListener("click", () => { $("request").value = S.club.presets.rain_request; $("request").focus(); });

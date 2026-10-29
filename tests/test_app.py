@@ -205,11 +205,31 @@ def test_add_at_taken_time_asks_before_adding() -> None:
     assert _add_clarification(club_problem(), before, free) is None
 
 
+def test_mock_answers_the_request_it_was_given() -> None:
+    """Mock is scripted, but a named team/day must not get another team's rules."""
+    wolves = api_plan({"mode": "mock", "request": "Wolves practice once a week, 60 minutes, Fridays after 5pm"})
+    assert wolves["proposal"]["events"]
+    assert {e["team_id"] for e in wolves["proposal"]["events"]} == {"t4"}
+    assert {e["starts_at"][8:10] for e in wolves["proposal"]["events"]}  # placed, Fridays below
+    from datetime import date
+
+    assert {date.fromisoformat(e["starts_at"][:10]).weekday() for e in wolves["proposal"]["events"]} == {4}
+    assert any("Mock mode" in n for n in wolves["proposal"]["rules"]["notes"])
+
+
+def test_modes_report_booleans_only() -> None:
+    modes = get_club()["modes"]
+    assert set(modes) == {"mock", "meta", "open"}
+    assert modes["mock"] is True
+    assert all(isinstance(v, bool) for v in modes.values())  # never key material
+
+
 def test_frontend_shows_current_diff_and_simple_primary() -> None:
     html = index().path.read_text(encoding="utf-8")
     assert 'id="run-btn"' in html and "Create schedule / Apply my wording" in html
     assert 'id="current-calendar"' in html and 'id="diff"' in html
     assert 'id="availability-btn"' in html and "Read ground &amp; coach photo" in html
+    assert "can be wrong" in html and "modes.meta" in html  # real mode preferred, mock warned
     # Pinned tabs scroll to Plan / Review / Approve; sessions collapse by week.
     assert 'href="#plan"' in html and 'href="#review"' in html and 'href="#approve"' in html
     assert "position: sticky" in html and "Expand all sessions" in html and "Minimize sessions" in html
