@@ -175,11 +175,11 @@ def test_api_run_routes_any_wording() -> None:
     planned = api_run({"mode": "mock", "request": "Badgers practice once a week, 60 minutes, Thursdays after 5pm"})
     events = planned["proposal"]["events"]
     assert events
-    moved = api_run({"mode": "mock", "request": "Move thu practice from 10/29 to friday 10/30",
+    moved = api_run({"mode": "mock", "request": "Move thu practice from 11/12 to friday 11/13",
                      "proposal": planned["proposal"], "events": events})
     days = sorted(e["starts_at"][:10] for e in moved["proposal"]["events"])
-    assert "2026-10-29" not in days
-    assert "2026-10-30" in days
+    assert "2026-11-12" not in days
+    assert "2026-11-13" in days
     kwargs = _stream_kwargs("run", {"mode": "mock", "request": "Cancel Badgers",
                                     "proposal": planned["proposal"], "events": events})
     assert kwargs["events"] == events and kwargs["proposal"] == planned["proposal"]

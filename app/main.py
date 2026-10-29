@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from schedule_agent import (
+    AvailabilityImport,
     Busy,
     ChatFn,
     Field,
@@ -34,8 +35,10 @@ from schedule_agent import (
     ScheduleImport,
     Team,
     VoiceConfig,
+    availability_to_busy,
     chat_fn,
     draft_notices,
+    extract_availability,
     extract_games,
     games_to_busy,
     transcribe_audio,
@@ -150,6 +153,21 @@ MOCK_GAMES = {
         {"date": "2026-11-14", "start": "18:00", "home": "Badgers", "away": "Foxes", "field": "South Field"},
     ],
     "notes": ["Mock mode: sample rows for the demo photo, not read from your upload."],
+}
+
+# Scripted grounds/coach photo for mock mode (model-shaped, see vision schema).
+MOCK_AVAILABILITY_MODEL = {
+    "grounds": [
+        {"field": "North Field", "weekdays": [1, 3], "open_from": "17:00", "open_until": "20:00"},
+        {"field": "South Field", "weekdays": [0, 2, 4], "open_from": "17:00", "open_until": "20:00"},
+    ],
+    "coach": [
+        {"team": "Foxes", "weekdays": [4], "date_from": "", "date_to": "",
+         "start_time": "17:00", "end_time": "18:00"},
+        {"team": "Badgers", "weekdays": [4], "date_from": "", "date_to": "",
+         "start_time": "17:00", "end_time": "18:00"},
+    ],
+    "notes": ["Mock mode: sample ground hours and coach windows, not read from your upload."],
 }
 
 
@@ -356,6 +374,8 @@ def mock_chat(messages: list, *, response_format=None, usage_out=None) -> str:
         )
     if name == "league_games":
         return json.dumps(MOCK_GAMES)
+    if name == "grounds_availability":
+        return json.dumps(MOCK_AVAILABILITY_MODEL)
     return "Mock reply."
 
 
@@ -532,6 +552,28 @@ def get_club() -> dict:
     }
 
 
+def demo_calendar() -> dict:
+    """Deterministic sample calendar for the demo season (mock plan, no key)."""
+    problem = club_problem()
+    agent = ScheduleAgent(mock_chat, deterministic_summary=True)
+    proposal = agent.plan(problem, CLUB["presets"]["plan_request"], verify=mock_verify_hook(problem))
+    return {
+        "events": [e.to_dict() for e in proposal.events],
+        "proposal": proposal.to_dict(),
+        "trace": agent.last_trace,
+        "season_start": CLUB["season_start"],
+        "season_end": CLUB["season_end"],
+        "team_count": len(CLUB["teams"]),
+        "field_count": len(CLUB["fields"]),
+    }
+
+
+@app.get("/api/calendar")
+def get_calendar() -> dict:
+    """Current sample schedule for Nov 1 - Dec 31, 2026, shown on page load."""
+    return demo_calendar()
+
+
 @app.post("/api/plan")
 def api_plan(body: dict) -> dict:
     """Plan a draft from a request; extra_busy adds host-known busy; games adds league games."""
@@ -606,6 +648,7 @@ _STREAM_LABELS = {
     "cancel_filter": "Reading the cancellation",
     "family_notices": "Drafting notices",
     "league_games": "Reading the schedule photo",
+    "grounds_availability": "Reading the grounds photo",
 }
 
 
@@ -807,11 +850,60 @@ def vision_result(mode: str, data: bytes, mime_type: str | None) -> dict:
     return {"schedule": schedule.to_dict(), "mock": False}
 
 
+def availability_result(mode: str, data: bytes, mime_type: str | None) -> dict:
+    """Read ground hours + coach unavailability from a photo; mock is labelled."""
+    if not data:
+        raise HTTPException(400, "No image received.")
+    problem = club_problem()
+    if mode == "mock":
+        imported = extract_availability(problem, data, mock_chat,
+                                        mime_type=mime_type or "image/png")
+        busy = availability_to_busy(imported, problem)
+        return _availability_payload(imported, busy, mock=True,
+                                     note="Mock mode: sample ground hours and coach windows, not read from your upload.")
+    from schedule_agent import AgentError, ModelError
+
+    try:
+        imported = extract_availability(problem, data, make_chat(mode),
+                                        mime_type=mime_type or "image/png")
+    except (AgentError, ModelError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    busy = availability_to_busy(imported, problem)
+    return _availability_payload(imported, busy, mock=False, note="")
+
+
+def _availability_payload(imported: AvailabilityImport, busy: list[Busy], *, mock: bool, note: str) -> dict:
+    """UI-ready availability: matched flags, team count and solver busy times."""
+    payload = imported.to_dict()
+    for row in payload["grounds"]:
+        row["matched"] = bool(row.get("field_id") and row.get("weekdays")
+                              and row.get("open_from") and row.get("open_until"))
+    for row in payload["coach"]:
+        row["matched"] = bool(row.get("team_id") and row.get("start") and row.get("end"))
+    teams_seen = sorted({r["team"] for r in payload["coach"] if r.get("team")})
+    return {
+        "availability": payload,
+        "busy": [b.to_dict() for b in busy],
+        "busy_count": len(busy),
+        "team_count": len(CLUB["teams"]),
+        "teams_seen": teams_seen,
+        "mock": mock,
+        "note": note,
+    }
+
+
 @app.post("/api/vision")
 async def api_vision(mode: str = Form("mock"), image: UploadFile = File(...)) -> dict:
     """Read league games from a schedule photo; mock mode returns labelled sample rows."""
     data = await image.read()
     return vision_result(mode, data, image.content_type)
+
+
+@app.post("/api/availability")
+async def api_availability(mode: str = Form("mock"), image: UploadFile = File(...)) -> dict:
+    """Read ground booking hours and coach unavailability from a photo."""
+    data = await image.read()
+    return availability_result(mode, data, image.content_type)
 
 
 @app.get("/", response_class=FileResponse)

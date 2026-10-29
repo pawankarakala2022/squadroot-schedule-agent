@@ -23,6 +23,8 @@ from app.main import (
     api_reschedule,
     api_revise,
     api_stream,
+    availability_result,
+    get_calendar,
     get_club,
     index,
     make_chat,
@@ -120,6 +122,35 @@ def test_stream_cancel_error_is_an_event() -> None:
 def test_stream_rejects_unknown_call() -> None:
     with pytest.raises(HTTPException):
         _collect_stream({"mode": "mock", "call": "dance", "request": "x"})
+
+
+def test_calendar_is_nov_dec_sample() -> None:
+    cal = get_calendar()
+    assert cal["season_start"] == "2026-11-01" and cal["season_end"] == "2026-12-31"
+    assert cal["team_count"] == 2 and cal["events"]
+    assert all("2026-11-01" <= e["starts_at"][:10] <= "2026-12-31" for e in cal["events"])
+    assert all(c["passed"] for c in cal["proposal"]["check_results"])
+
+
+def test_availability_photo_mock_blocks_time() -> None:
+    result = availability_result("mock", b"fake-bytes", "image/png")
+    assert result["mock"] is True and result["team_count"] == 2
+    assert set(result["teams_seen"]) == {"Foxes", "Badgers"}
+    assert all(g["matched"] for g in result["availability"]["grounds"])
+    assert all(c["matched"] for c in result["availability"]["coach"])
+    assert result["busy_count"] > 0 and result["busy"]
+    planned = api_plan({"mode": "mock", "request": PRESETS["plan_request"],
+                        "extra_busy": result["busy"]})
+    assert planned["proposal"]["events"]
+    assert all(c["passed"] for c in planned["proposal"]["check_results"])
+
+
+def test_frontend_shows_current_diff_and_simple_primary() -> None:
+    html = index().path.read_text(encoding="utf-8")
+    assert 'id="run-btn"' in html and "Create schedule / Apply my wording" in html
+    assert 'id="current-calendar"' in html and 'id="diff"' in html
+    assert 'id="availability-btn"' in html and "Read ground &amp; coach photo" in html
+    assert "Will be cancelled (red)" in html and "CONFLICT" in html
 
 
 def test_mock_voice_and_vision() -> None:
