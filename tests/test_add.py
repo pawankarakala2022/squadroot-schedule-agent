@@ -89,6 +89,80 @@ def test_add_places_only_new_session_and_keeps_existing() -> None:
     ]
 
 
+def _ground_chat(*, earliest: str = "15:00", latest: str = "16:00", fields: list | None = None):  # type: ignore[no-untyped-def]
+    rules = json.dumps({
+        "requirements": [{
+            "team_alias": "T1", "event_type": "game", "sessions_per_week": 1,
+            "duration_minutes": 60, "allowed_days": [3],
+            "allowed_field_aliases": fields if fields is not None else ["F1"],
+            "earliest_start": earliest, "latest_end": latest, "title": "vs Falcons",
+            "active_from": "2026-09-10", "active_until": "2026-09-10",
+        }],
+        "min_gap_days": 1, "blackout_dates": [], "blackout_ranges": [], "notes": [],
+    })
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is None:
+            return "Explained."
+        if response_format["json_schema"]["name"] == "route_intent":
+            return json.dumps({"call": "add", "notes": []})
+        return rules
+
+    return chat
+
+
+def test_add_accepts_ground_hours_and_ground_busy() -> None:
+    """Adds are accepted as requested: this app cannot verify grounds.
+
+    Ground hours (17:00-20:00) and a field busy marked 'ground
+    unavailable' must not block or move an explicit addition; the
+    proposal says ground availability was not verified.
+    """
+    from schedule_agent import Busy
+
+    tz = ZoneInfo(TZ)
+    problem = _problem()
+    problem.busy = [Busy(resource="field:f1", start=datetime(2026, 9, 10, 0, 0, tzinfo=tz),
+                         end=datetime(2026, 9, 10, 23, 59, tzinfo=tz), reason="ground unavailable")]
+    existing = [_event("t1", "f1", 7)]
+    agent = ScheduleAgent(_ground_chat(), deterministic_summary=True)
+    proposal = agent.add(problem, existing, "Add a game with Falcons on Thursday Sep 10 at 3pm")
+    added = [e for e in proposal.events if e.event_type == "game"]
+    assert len(added) == 1
+    assert added[0].starts_at == datetime(2026, 9, 10, 15, 0, tzinfo=tz) and added[0].field_id == "f1"
+    assert not proposal.shortfalls
+    assert all(c.passed for c in proposal.check_results)  # no failing ground check
+    assert any("Ground availability is not verified" in n for n in proposal.rules.notes)
+    assert "Ground availability is not verified" in proposal.summary
+    approved = agent.approve(proposal)
+    assert approved.approved is True
+
+
+def test_plan_still_respects_ground_availability() -> None:
+    """Scope is adds only: a fresh plan still cannot use an unavailable ground."""
+    from schedule_agent import Busy
+
+    tz = ZoneInfo(TZ)
+    problem = _problem()
+    problem.busy = [Busy(resource="field:f1", start=datetime(2026, 9, 10, 0, 0, tzinfo=tz),
+                         end=datetime(2026, 9, 10, 23, 59, tzinfo=tz), reason="ground unavailable")]
+    agent = ScheduleAgent(_ground_chat())
+    proposal = agent.plan(problem, "Foxes game on Thursday Sep 10 at 3pm on North Field")
+    assert proposal.events == []
+    assert proposal.shortfalls
+
+
+def test_add_still_blocked_by_saved_session_on_same_ground() -> None:
+    """Our own booking on that ground is verifiable, so it still blocks."""
+    existing = [_event("t2", "f1", 10, title="Badgers practice")]  # Thu Sep 10 17:00, North
+    chat = _ground_chat(earliest="17:00", latest="18:00")
+    agent = ScheduleAgent(chat)
+    proposal = agent.add(_problem(), existing, "Add a game with Falcons on Thursday Sep 10 at North")
+    assert proposal.events == existing
+    assert len(proposal.shortfalls) == 1
+    assert "No sessions added." in proposal.summary
+
+
 def test_add_with_no_free_slot_shortfalls_and_keeps_existing() -> None:
     # Foxes already occupy Thu 17:00 on both fields via team/field freeze:
     # the same-team busy block makes the 17:00-18:00 game unplaceable.

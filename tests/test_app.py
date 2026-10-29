@@ -16,6 +16,7 @@ import app.main as app_main
 from app.main import (
     CLUB,
     _stream_kwargs,
+    api_add,
     api_approve,
     api_cancel,
     api_notices,
@@ -175,6 +176,28 @@ def test_availability_photo_mock_blocks_time() -> None:
     assert all(c["passed"] for c in planned["proposal"]["check_results"])
 
 
+def test_add_accepts_when_ground_reports_unavailable() -> None:
+    """Ground busy from a photo must not block an explicit add in the demo."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from schedule_agent import Busy
+
+    tz = ZoneInfo("America/Toronto")
+    busy = [
+        Busy(resource=f"field:{fid}", start=datetime(2026, 11, 1, 0, 0, tzinfo=tz),
+             end=datetime(2026, 11, 1, 23, 59, tzinfo=tz), reason="ground unavailable").to_dict()
+        for fid in ("f1", "f2")
+    ]
+    proposal = _plan()
+    added = api_add({"mode": "mock", "events": proposal["events"],
+                     "request": "Add a game", "extra_busy": busy})
+    assert len(added["proposal"]["events"]) == len(proposal["events"]) + 1
+    assert not added["proposal"]["shortfalls"]
+    assert "Ground availability is not verified" in added["proposal"]["summary"]
+    assert all(c["passed"] for c in added["proposal"]["check_results"])
+
+
 def test_add_at_taken_time_asks_before_adding() -> None:
     """Badgers Thu 5pm is taken, so an 18:00 placement must ask, not silently add."""
     from datetime import datetime, time as dtime
@@ -246,6 +269,7 @@ def test_plan_around_uploaded_games_with_no_typed_request() -> None:
     """'Plan around these games' with an empty box plans the standard practices."""
     planned = api_plan({"mode": "mock", "request": "", "games": _uploaded_games()})
     assert planned["proposal"]["events"]
+    assert planned["proposal"]["shortfalls"] == []  # no spurious Nov 29 Thu shortfall
     assert all(c["passed"] for c in planned["proposal"]["check_results"])
 
     streamed = _collect_stream({"mode": "mock", "call": "plan", "request": "", "games": _uploaded_games()})

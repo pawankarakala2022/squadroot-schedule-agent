@@ -257,6 +257,38 @@ def test_active_window_scopes_one_off_session() -> None:
     assert not proposal.shortfalls
 
 
+def test_truncated_last_week_without_allowed_day_is_not_a_shortfall() -> None:
+    """Season Sun Nov 1 - Mon Nov 30: the Nov 29-30 fragment has no Thursday.
+
+    A Thursday team is not short that week (its last session is Nov 26);
+    a Monday team still gets Nov 30 in the same fragment.
+    """
+    problem = Problem(
+        teams=[Team(id="t1", name="Otters"), Team(id="t2", name="Foxes")],
+        fields=[Field(id="f1", name="North", open_from=time(17, 0), open_until=time(20, 0))],
+        season_start=date(2026, 11, 1),
+        season_end=date(2026, 11, 30),
+        timezone=TZ,
+    )
+    rules = Rules(
+        requirements=[
+            Requirement(team_id="t1", event_type="practice", sessions_per_week=1,
+                        duration_minutes=60, allowed_days=[3]),
+            Requirement(team_id="t2", event_type="practice", sessions_per_week=1,
+                        duration_minutes=60, allowed_days=[0]),
+        ],
+        min_gap_days=1,
+    )
+    proposal = solve(problem, rules)
+    assert not proposal.shortfalls
+    assert [e.starts_at.date().isoformat() for e in proposal.events if e.team_id == "t1"] == [
+        "2026-11-05", "2026-11-12", "2026-11-19", "2026-11-26",
+    ]
+    assert [e.starts_at.date().isoformat() for e in proposal.events if e.team_id == "t2"] == [
+        "2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23", "2026-11-30",
+    ]
+
+
 def test_requirement_title_used_for_events() -> None:
     problem = Problem(
         teams=[Team(id="t1", name="U12")],

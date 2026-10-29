@@ -28,7 +28,7 @@ from .errors import AgentError
 from .router import parse_route_intent
 from .explain import explain_proposal, summarize_proposal
 from .llm import ChatFn
-from .models import ApplyResult, Busy, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
+from .models import ApplyResult, Busy, Field, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
 from .solver import solve
 from .understand import understand_request
 
@@ -57,6 +57,35 @@ def _rebuild(problem: Problem, busy: list[Busy]) -> Problem:
     return Problem(
         teams=problem.teams,
         fields=problem.fields,
+        season_start=problem.season_start,
+        season_end=problem.season_end,
+        timezone=problem.timezone,
+        busy=busy,
+        blackout_dates=problem.blackout_dates,
+    )
+
+
+# Adds only: the app cannot verify whether a ground is available, so
+# ground hours and ground-availability busy times never block an explicit
+# addition. Stated verbatim in every add proposal (rules notes + summary).
+GROUND_AVAILABILITY_NOTE = (
+    "Ground availability is not verified by this app; ground hours and "
+    "ground-availability times did not block this addition - accepted as "
+    "requested. A ground already booked by a saved session still blocks."
+)
+
+
+def _ground_unchecked(problem: Problem, busy: list[Busy]) -> Problem:
+    """Copy with ground hours removed; ``busy`` is passed exactly as given.
+
+    Callers choose which busy entries survive: add passes team busy plus
+    the frozen busy of saved sessions (so a saved session still blocks
+    its own ground), and drops every other ``field:`` busy entry.
+    Field ids/names are kept, so double-booking checks still name them.
+    """
+    return Problem(
+        teams=problem.teams,
+        fields=[Field(id=f.id, name=f.name) for f in problem.fields],
         season_start=problem.season_start,
         season_end=problem.season_end,
         timezone=problem.timezone,
@@ -479,6 +508,15 @@ class ScheduleAgent:
         what could not be added; saved sessions stay exactly where they
         are in every case. Coach busy times (``Problem.busy`` -- pass
         tracked unavailability up front -- and ``verify``) apply.
+
+        Ground availability is the one exception: this app cannot verify
+        whether a ground is available, so ground hours and ``field:``
+        busy times (e.g. from a grounds photo) neither block nor move an
+        explicit addition, and add proposals run no failing ground
+        check. Every add proposal states this in its rules notes. A
+        ground already booked by a saved session still blocks (that is
+        verifiable from the calendar), as do team overlap, blackout
+        dates and coach/team busy times. Fresh plans are unaffected.
         """
         self.last_trace = []
         current = self._coerce_events(events)
@@ -942,7 +980,10 @@ class ScheduleAgent:
         extra: list[Busy] = []
         rounds = 0
         while True:
-            working = _rebuild(problem, list(problem.busy) + frozen + extra)
+            # Ground unchecked: team busy applies, frozen saved sessions
+            # still freeze their team and ground, other field busy is dropped.
+            team_busy = [b for b in list(problem.busy) + extra if not b.resource.startswith("field:")]
+            working = _ground_unchecked(problem, team_busy + frozen)
             started = time.monotonic()
             draft = solve(working, effective)
             self.last_trace.append(
@@ -955,7 +996,9 @@ class ScheduleAgent:
                 }
             )
             combined = sorted(current + draft.events, key=lambda e: (e.starts_at, e.team_id, e.field_id))
-            checking = _rebuild(problem, list(problem.busy) + extra)
+            checking = _ground_unchecked(
+                problem, [b for b in list(problem.busy) + extra if not b.resource.startswith("field:")]
+            )
             started = time.monotonic()
             results = run_checks(checking, effective, combined)
             failed = sum(1 for c in results if not c.passed)
@@ -969,7 +1012,10 @@ class ScheduleAgent:
                 }
             )
             reported = self._call_verify(verify, combined) if verify is not None else []
-            new = [b for b in reported if (b.resource, b.start, b.end) not in seen]
+            new = [
+                b for b in reported
+                if not b.resource.startswith("field:") and (b.resource, b.start, b.end) not in seen
+            ]
             self.last_trace.append(
                 {
                     "step": "verify",
@@ -986,6 +1032,7 @@ class ScheduleAgent:
                     blackout_dates=effective.blackout_dates,
                     notes=[
                         f"Added {len(draft.events)} session(s); {len(current)} existing session(s) unchanged.",
+                        GROUND_AVAILABILITY_NOTE,
                         *effective.notes,
                     ],
                 )

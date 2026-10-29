@@ -1,5 +1,35 @@
 # Changelog
 
+## v5.0.2 (2026-10-29)
+
+Bug fix, no name or shape changed: explicit additions are accepted at
+the requested ground even when ground availability says otherwise.
+The app cannot verify whether a ground is available, so in
+`ScheduleAgent.add` (adds only; fresh plans unchanged) ground hours
+and `field:` busy times -- including "ground unavailable" times from a
+grounds photo and field busy reported by the verify hook -- neither
+block nor move a new game/session, and add proposals run their checks
+with no ground hours or field busy, so no ground check can fail or
+block approval. Every add proposal states this ("Ground availability
+is not verified by this app ... accepted as requested") in its rules
+notes and summary. Verifiable facts still block: a ground already
+booked by a saved session, team overlap, blackout dates, and
+coach/team busy times.
+
+## v5.0.1 (2026-10-29)
+
+Bug fix, no name or shape changed: truncated season fragments no
+longer invent shortfalls. The solver chunks the season into 7-day
+pieces from `season_start`, so the demo season ended in a Sun Nov 29 -
+Mon Nov 30 fragment containing no Thursday -- Otters and Wolves
+(Thursday teams) were reported "0 of 1 practice sessions placed" for a
+week starting 2026-11-29 even though their last Thursday session was
+Nov 26 and the next Thursday falls after the season. A week is now in
+scope only when it contains a date inside the requirement's window on
+an allowed weekday; a blacked-out or busy allowed day stays in scope
+and still shortfalls. The Nov 14 league games remain games (blocked as
+"league game" busy), never practices.
+
 ## v5.0.0 (2026-10-29)
 
 Breaking (games busy semantics): league games against external

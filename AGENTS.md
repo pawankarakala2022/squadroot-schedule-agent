@@ -65,7 +65,10 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
      `agent.revise(problem, proposal, request, *, verify=None) -> Proposal`,
      `agent.add(problem, events, request, *, previous=None, verify=None) -> Proposal`
      (insert-only: existing sessions frozen and never move, only the new
-     session(s) are placed around them; no calendar fails safely),
+     session(s) are placed around them; no calendar fails safely;
+     ground availability is not verified by the app, so ground hours and
+     `field:` busy times never block an addition and every add proposal
+     says so, while a ground booked by a saved session still blocks),
      `agent.approve(proposal) -> ApplyResult` (the only path to an approval;
      refuses drafts with failed checks; applies nothing — the host saves),
      `agent.reschedule(problem, events, request, *, verify=None, not_before=None,

@@ -39,7 +39,7 @@ from .vision import (
 )
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "5.0.0"
+__version__ = "5.0.2"
 
 __all__ = [
     "__version__",
