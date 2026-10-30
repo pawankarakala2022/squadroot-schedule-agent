@@ -330,6 +330,12 @@ class ScheduleAgent:
                 raise AgentError("The saved draft could not be read; please start a new request.") from exc
         if not isinstance(proposal, Proposal):
             raise AgentError("The saved draft could not be read; please start a new request.")
+        if getattr(proposal, "questions", None):
+            raise AgentError(
+                "This draft has open questions and cannot be approved yet: "
+                + "; ".join(proposal.questions)
+                + " Please answer them and run the request again."
+            )
         if not proposal.check_results:
             raise AgentError("This draft has no check results yet; please plan it again before approving.")
         failed = [c for c in proposal.check_results if not c.passed]

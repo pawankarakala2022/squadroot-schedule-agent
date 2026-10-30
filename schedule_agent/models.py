@@ -451,11 +451,13 @@ class Proposal:
     check_results: list[CheckResult] = field(default_factory=list)
     shortfalls: list[Shortfall] = field(default_factory=list)
     summary: str = ""
+    questions: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.events = list(self.events)
         self.check_results = list(self.check_results)
         self.shortfalls = list(self.shortfalls)
+        self.questions = [str(q) for q in self.questions]
 
     def shortfall_summary(self) -> str:
         """One line per team and event type.
@@ -487,6 +489,7 @@ class Proposal:
             "check_results": [c.to_dict() for c in self.check_results],
             "shortfalls": [s.to_dict() for s in self.shortfalls],
             "summary": self.summary,
+            "questions": list(self.questions),
         }
 
     @classmethod
@@ -498,6 +501,7 @@ class Proposal:
             check_results=[CheckResult.from_dict(x) for x in d.get("check_results", [])],
             shortfalls=[Shortfall.from_dict(x) for x in d.get("shortfalls", [])],
             summary=str(d.get("summary", "")),
+            questions=[str(x) for x in d.get("questions", [])],
         )
 
 

@@ -38,6 +38,7 @@ from .vision import (
     games_to_busy,
     games_to_events,
 )
+from .apply_edits import build_edit_proposal
 from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits
 from .voice import VoiceConfig, transcribe_audio
 
@@ -99,4 +100,5 @@ __all__ = [
     "EditOp",
     "EditPlan",
     "parse_edits",
+    "build_edit_proposal",
 ]
