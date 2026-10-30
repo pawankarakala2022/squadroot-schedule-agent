@@ -31,6 +31,7 @@ from .llm import ChatFn
 from .models import ApplyResult, Busy, Field, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
 from .solver import solve
 from .understand import understand_request
+from .vision import ScheduleImport, games_to_busy, games_to_events
 
 # How many times a verify hook may send new busy times back for a re-solve.
 MAX_VERIFY_ROUNDS = 3
@@ -114,6 +115,18 @@ def _closed_day_busy(closed: set[str], disruption: Disruption, tz: ZoneInfo) -> 
             out.append(Busy(resource=f"field:{fid}", start=start, end=end, reason="field closed"))
         day += timedelta(days=1)
     return out
+
+
+def _coerce_games(games: ScheduleImport | dict[str, Any] | None) -> ScheduleImport | None:
+    """Accept a ScheduleImport or its dict (the host JSON-round-trips it)."""
+    if games is None or isinstance(games, ScheduleImport):
+        return games
+    if isinstance(games, dict):
+        try:
+            return ScheduleImport.from_dict(games)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AgentError("The uploaded games could not be read; please read the photo again.") from exc
+    raise AgentError("The uploaded games could not be read; please read the photo again.")
 
 
 def _normalize_previous(previous: Rules | dict[str, Any] | None) -> Rules | None:
@@ -256,6 +269,7 @@ class ScheduleAgent:
         previous: Rules | dict[str, Any] | None = None,
         verify: VerifyHook | None = None,
         language: str = "en",
+        games: ScheduleImport | dict[str, Any] | None = None,
     ) -> Proposal:
         """Turn a plain-words request into a checked draft Proposal.
 
@@ -263,10 +277,16 @@ class ScheduleAgent:
         3 rounds) -> explain. ``previous`` (a Rules or its dict) gives
         follow-up requests continuity. Raises :class:`AgentError` for a
         bad request and :class:`ModelError` when the model is down.
+
+        ``games`` (a ScheduleImport or its dict, from an uploaded league
+        schedule) are fixed fixtures, not requests: they enter the
+        proposal as checked ``game`` events at their printed date, time
+        and field, and their known teams/fields block practice time
+        while the solver places everything else around them.
         """
         self.last_trace = []
         rules = self._understand(problem, request, _normalize_previous(previous), language)
-        return self._finish(problem, rules, verify, language)
+        return self._finish(problem, rules, verify, language, games=_coerce_games(games))
 
     def revise(
         self,
@@ -276,6 +296,7 @@ class ScheduleAgent:
         *,
         verify: VerifyHook | None = None,
         language: str = "en",
+        games: ScheduleImport | dict[str, Any] | None = None,
     ) -> Proposal:
         """New ask against an existing draft; everything else is kept.
 
@@ -291,7 +312,7 @@ class ScheduleAgent:
             raise AgentError("The saved draft could not be read; please start a new request.")
         self.last_trace = []
         rules = self._understand(problem, request, proposal.rules, language)
-        return self._finish(problem, rules, verify, language)
+        return self._finish(problem, rules, verify, language, games=_coerce_games(games))
 
     def approve(self, proposal: Proposal | dict[str, Any]) -> ApplyResult:
         """Record a human's approval of a checked draft. The only path to an approval.
@@ -521,7 +542,7 @@ class ScheduleAgent:
         self.last_trace = []
         current = self._coerce_events(events)
         if not current:
-            raise AgentError("There is no calendar yet — set one first (plan), then add sessions.")
+            raise AgentError("There is no calendar yet â€” set one first (plan), then add sessions.")
         rules = self._understand_add(problem, current, request, _normalize_previous(previous), language)
         if not rules.requirements:
             raise AgentError("Please say which session to add (team, day or date).")
@@ -539,6 +560,7 @@ class ScheduleAgent:
         not_before: date | str | None = None,
         allowed_fields: list[str] | None = None,
         language: str = "en",
+        games: ScheduleImport | dict[str, Any] | None = None,
     ) -> Proposal:
         """Route any scheduling request to the right call and run it.
 
@@ -589,7 +611,7 @@ class ScheduleAgent:
             add_events = current if current else (draft.events if draft is not None else None)
             if not add_events:
                 base = _normalize_previous(previous)
-                out = self.plan(problem, request, previous=base, verify=verify, language=language)
+                out = self.plan(problem, request, previous=base, verify=verify, language=language, games=games)
             else:
                 context = draft.rules if draft is not None else previous
                 out = self.add(
@@ -597,11 +619,11 @@ class ScheduleAgent:
                 )
         elif route.call == "cancel":
             if not current:
-                raise AgentError("There is no calendar yet — set one first (plan), then cancel sessions.")
+                raise AgentError("There is no calendar yet â€” set one first (plan), then cancel sessions.")
             out = self.cancel(problem, current, request, language=language)
         elif route.call == "reschedule":
             if not current:
-                raise AgentError("There is no calendar yet — set one first (plan), then move sessions.")
+                raise AgentError("There is no calendar yet â€” set one first (plan), then move sessions.")
             out = self.reschedule(
                 problem, current, request, verify=verify, not_before=not_before,
                 allowed_fields=allowed_fields, language=language,
@@ -609,14 +631,14 @@ class ScheduleAgent:
         elif route.call == "revise":
             if draft is None:
                 base = _normalize_previous(previous)
-                out = self.plan(problem, request, previous=base, verify=verify, language=language)
+                out = self.plan(problem, request, previous=base, verify=verify, language=language, games=games)
             else:
-                out = self.revise(problem, draft, request, verify=verify, language=language)
+                out = self.revise(problem, draft, request, verify=verify, language=language, games=games)
         else:
             base = _normalize_previous(previous)
             if base is None and draft is not None:
                 base = draft.rules
-            out = self.plan(problem, request, previous=base, verify=verify, language=language)
+            out = self.plan(problem, request, previous=base, verify=verify, language=language, games=games)
         self.last_trace = routed + self.last_trace
         return out
 
@@ -1066,9 +1088,34 @@ class ScheduleAgent:
             )
         return "\n".join(lines)
 
-    def _finish(self, problem: Problem, rules: Rules, verify: VerifyHook | None, language: str = "en") -> Proposal:
-        """Solve, check, re-solve on host busy times (max 3 rounds), explain."""
-        working_busy = list(problem.busy)
+    def _finish(
+        self,
+        problem: Problem,
+        rules: Rules,
+        verify: VerifyHook | None,
+        language: str = "en",
+        games: ScheduleImport | None = None,
+    ) -> Proposal:
+        """Solve, check, re-solve on host busy times (max 3 rounds), explain.
+
+        Uploaded ``games`` are fixed: their events are never solved or
+        moved, they block practice time while solving, and the final
+        checks run on practices + game events together (without the
+        games' own busy, so a game cannot fail against itself -- a
+        practice on its field or team is caught as a double booking).
+        """
+        game_events = games_to_events(games, problem) if games is not None else []
+        game_busy = games_to_busy(games, problem) if games is not None else []
+        if games is not None:
+            self.last_trace.append(
+                {"step": "games", "events": len(game_events), "busy": len(game_busy)}
+            )
+            if game_events:
+                rules.notes.append(
+                    f"Included {len(game_events)} league game(s) from the uploaded schedule "
+                    "as fixed game events; other sessions were placed around them."
+                )
+        working_busy = list(problem.busy) + game_busy
         seen = {(b.resource, b.start, b.end) for b in working_busy}
         rounds = 0
         while True:
@@ -1092,8 +1139,31 @@ class ScheduleAgent:
                     "latency_ms": int((time.monotonic() - started) * 1000),
                 }
             )
+            combined = sorted(
+                draft.events + game_events, key=lambda e: (e.starts_at, e.team_id, e.field_id, e.title)
+            )
+            checking = Problem(
+                teams=problem.teams,
+                fields=problem.fields,
+                season_start=problem.season_start,
+                season_end=problem.season_end,
+                timezone=problem.timezone,
+                busy=[b for b in working_busy if b not in game_busy],
+                blackout_dates=problem.blackout_dates,
+            )
+            # Fixed fixtures cannot move, so the recurring gap rule is
+            # not re-imposed against them (solver still enforces it
+            # between the sessions it places, as in add/reschedule).
+            checking_rules = (
+                Rules(
+                    requirements=rules.requirements, min_gap_days=0,
+                    blackout_dates=rules.blackout_dates, notes=rules.notes,
+                )
+                if game_events
+                else rules
+            )
             started = time.monotonic()
-            results = run_checks(working, rules, draft.events)
+            results = run_checks(checking, checking_rules, combined)
             failed = sum(1 for c in results if not c.passed)
             self.last_trace.append(
                 {
@@ -1104,7 +1174,7 @@ class ScheduleAgent:
                     "latency_ms": int((time.monotonic() - started) * 1000),
                 }
             )
-            extra = self._call_verify(verify, draft.events) if verify is not None else []
+            extra = self._call_verify(verify, combined) if verify is not None else []
             new = [b for b in extra if (b.resource, b.start, b.end) not in seen]
             self.last_trace.append(
                 {
@@ -1118,11 +1188,11 @@ class ScheduleAgent:
             if not new or rounds >= MAX_VERIFY_ROUNDS:
                 proposal = Proposal(
                     rules=rules,
-                    events=draft.events,
+                    events=combined,
                     check_results=results,
                     shortfalls=draft.shortfalls,
                 )
-                proposal.summary = self._explain(working, proposal, language)
+                proposal.summary = self._explain(checking, proposal, language)
                 return proposal
             for busy in new:
                 seen.add((busy.resource, busy.start, busy.end))

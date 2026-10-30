@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 from .errors import AgentError
 from .llm import ChatFn
-from .models import Busy, Problem
+from .models import Busy, Problem, ProposedEvent
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MIN_GAME_MINUTES = 1
@@ -742,6 +742,48 @@ def availability_to_busy(imported: AvailabilityImport, problem: Problem) -> list
     return out
 
 
+def _check_duration(duration_minutes: int) -> timedelta:
+    if (
+        not isinstance(duration_minutes, int)
+        or isinstance(duration_minutes, bool)
+        or duration_minutes < MIN_GAME_MINUTES
+        or duration_minutes > MAX_GAME_MINUTES
+    ):
+        raise ValueError(f"duration_minutes must be an int {MIN_GAME_MINUTES}..{MAX_GAME_MINUTES}.")
+    return timedelta(minutes=duration_minutes)
+
+
+def games_to_events(schedule: ScheduleImport, problem: Problem, *, duration_minutes: int = 60) -> list[ProposedEvent]:
+    """Turn blocking games into fixed game events for the proposal.
+
+    One event per game with a known team and a known field, under the
+    home team (else the away team), titled with both names exactly as
+    printed -- an external opponent stays in the title, never an id.
+    The solver never moves these: their date, time and field come from
+    the league schedule. Rows with no known team or no known field
+    cannot be events (nothing to attach them to) but still block time
+    via :func:`games_to_busy`. Sorted by start, then team, then field.
+    """
+    length = _check_duration(duration_minutes)
+    tz = ZoneInfo(problem.timezone)
+    out: list[ProposedEvent] = []
+    for game in schedule.blocking_games():
+        team_id = game.home_id or game.away_id
+        if team_id is None or game.field_id is None:
+            continue
+        assert game.date is not None and game.start is not None
+        start = datetime.combine(game.date, game.start, tzinfo=tz)
+        title = f"{game.home} v {game.away}" if game.home and game.away else (game.home or game.away or "League game")
+        out.append(
+            ProposedEvent(
+                team_id=team_id, field_id=game.field_id, event_type="game",
+                title=title, starts_at=start, ends_at=start + length,
+            )
+        )
+    out.sort(key=lambda e: (e.starts_at, e.team_id, e.field_id, e.title))
+    return out
+
+
 def games_to_busy(schedule: ScheduleImport, problem: Problem, *, duration_minutes: int = 60) -> list[Busy]:
     """Turn games into Busy intervals for their known teams and field.
 
@@ -751,16 +793,9 @@ def games_to_busy(schedule: ScheduleImport, problem: Problem, *, duration_minute
     guessed. Rows with no known team/field or no readable date/time
     block nothing.
     """
-    if (
-        not isinstance(duration_minutes, int)
-        or isinstance(duration_minutes, bool)
-        or duration_minutes < MIN_GAME_MINUTES
-        or duration_minutes > MAX_GAME_MINUTES
-    ):
-        raise ValueError(f"duration_minutes must be an int {MIN_GAME_MINUTES}..{MAX_GAME_MINUTES}.")
+    length = _check_duration(duration_minutes)
     tz = ZoneInfo(problem.timezone)
     out: list[Busy] = []
-    length = timedelta(minutes=duration_minutes)
     for game in schedule.blocking_games():
         assert game.date is not None and game.start is not None
         start = datetime.combine(game.date, game.start, tzinfo=tz)

@@ -11,7 +11,7 @@ from schedule_agent.checks import run_checks
 from schedule_agent.errors import AgentError
 from schedule_agent.models import Field, Problem, Requirement, Rules, Team
 from schedule_agent.solver import solve
-from schedule_agent.vision import ScheduleImport, extract_games, games_to_busy
+from schedule_agent.vision import ScheduleImport, extract_games, games_to_busy, games_to_events
 
 TZ = "America/Toronto"
 
@@ -127,6 +127,21 @@ def test_external_opponent_games_block_our_team_and_field() -> None:
         ("team:t1", "2026-09-14T17:00:00-04:00"),
         ("field:f1", "2026-09-14T17:00:00-04:00"),
     }
+
+
+def test_games_to_events_includes_external_opponent_game() -> None:
+    """The game itself becomes a fixed event, titled with both printed names."""
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        return _payload([_row(home="U12 Foxes", away="Greyhawks Comets")])
+
+    problem = _problem()
+    schedule = extract_games(problem, b"img", chat)
+    (event,) = games_to_events(schedule, problem)
+    assert event.event_type == "game" and event.team_id == "t1" and event.field_id == "f1"
+    assert event.title == "U12 Foxes v Greyhawks Comets"
+    assert event.starts_at.isoformat() == "2026-09-14T17:00:00-04:00"
+    assert event.ends_at.isoformat() == "2026-09-14T18:00:00-04:00"
 
 
 def test_garbage_twice_raises_agent_error() -> None:

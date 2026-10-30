@@ -77,6 +77,28 @@ def test_plan_happy_path_trace_shape() -> None:
     json.dumps(agent.last_trace)  # every step must be display-safe
 
 
+def test_plan_includes_uploaded_games_as_fixed_events() -> None:
+    from datetime import time as dtime
+
+    from schedule_agent import GameImport, ScheduleImport
+
+    games = ScheduleImport(games=[
+        GameImport(date=date(2026, 9, 14), start=dtime(17, 0), home="U12", away="Greyhawks Comets",
+                   field="North", home_id="t1", away_id=None, field_id="f1",
+                   note="unknown team 'Greyhawks Comets'"),
+    ])
+    agent = ScheduleAgent(_chat())
+    proposal = agent.plan(_problem(), "U12 practice Mondays after 5pm", games=games)
+    game_events = [e for e in proposal.events if e.event_type == "game"]
+    assert len(game_events) == 1
+    assert game_events[0].title == "U12 v Greyhawks Comets"
+    assert game_events[0].starts_at.date() == date(2026, 9, 14)
+    assert len(proposal.events) == 3  # 2 Monday practices + the fixed game
+    assert all(c.passed for c in proposal.check_results)
+    assert any(s.get("step") == "games" and s["events"] == 1 for s in agent.last_trace)
+    assert agent.approve(proposal).approved is True
+
+
 def test_plan_verify_round_resolves_host_busy() -> None:
     tz = ZoneInfo(TZ)
     busy = Busy(

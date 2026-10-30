@@ -36,10 +36,11 @@ from .vision import (
     extract_availability,
     extract_games,
     games_to_busy,
+    games_to_events,
 )
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "5.0.2"
+__version__ = "5.1.0"
 
 __all__ = [
     "__version__",
@@ -91,4 +92,5 @@ __all__ = [
     "ScheduleImport",
     "extract_games",
     "games_to_busy",
+    "games_to_events",
 ]

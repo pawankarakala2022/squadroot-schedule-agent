@@ -315,7 +315,7 @@ async function run(kind) {
   try {
     if (kind === "run") { const payload = { request, games: S.games, extra_busy: S.extraBusy }; if (S.proposal) payload.proposal = S.proposal; if (calendar.length) payload.events = calendar; await runStream(kind, payload); }
     if (kind === "plan") await runStream(kind, { request, games: S.games, extra_busy: S.extraBusy });
-    if (kind === "revise") { if (!S.proposal) throw new Error("Create a proposal first (Plan), then revise it in Review."); await runStream(kind, { proposal: S.proposal, request, extra_busy: S.extraBusy }); }
+    if (kind === "revise") { if (!S.proposal) throw new Error("Create a proposal first (Plan), then revise it in Review."); await runStream(kind, { proposal: S.proposal, request, extra_busy: S.extraBusy, games: S.games }); }
     if (kind === "reschedule") { if (!calendar.length) throw new Error("There is no calendar yet — set one first."); await runStream(kind, { events: calendar, request, extra_busy: S.extraBusy }); }
     if (kind === "cancel") { if (!calendar.length) throw new Error("There is no calendar yet — set one first."); await runStream(kind, { events: calendar, request }); }
   } catch (err) { fail(err.message); } finally { setBusy(false); }

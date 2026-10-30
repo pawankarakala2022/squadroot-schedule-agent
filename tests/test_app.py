@@ -271,6 +271,16 @@ def test_plan_around_uploaded_games_with_no_typed_request() -> None:
     assert planned["proposal"]["events"]
     assert planned["proposal"]["shortfalls"] == []  # no spurious Nov 29 Thu shortfall
     assert all(c["passed"] for c in planned["proposal"]["check_results"])
+    # The Nov 14 games themselves are in the proposal, not just busy time.
+    games = [e for e in planned["proposal"]["events"] if e["event_type"] == "game"]
+    assert [(g["starts_at"][:16], g["title"], g["field_id"]) for g in games] == [
+        ("2026-11-14T17:00", "Foxes v Greyhawks Comets", "f1"),
+        ("2026-11-14T17:00", "Otters v Greyhawks Ravens", "f2"),
+        ("2026-11-14T18:00", "Badgers v Greyhawks Lynx", "f1"),
+        ("2026-11-14T18:00", "Wolves v Greyhawks Thunder", "f2"),
+    ]
+    assert len(planned["proposal"]["events"]) == 22  # 18 practices + 4 games
+    assert "Greyhawks Comets" in planned["proposal"]["summary"]
 
     streamed = _collect_stream({"mode": "mock", "call": "plan", "request": "", "games": _uploaded_games()})
     assert streamed[-1]["type"] == "result" and streamed[-1]["proposal"]["events"]
@@ -282,7 +292,9 @@ def test_uploaded_games_actually_block_their_slot() -> None:
                         "games": _uploaded_games()})
     assert all(c["passed"] for c in planned["proposal"]["check_results"])
     nov14 = [e for e in planned["proposal"]["events"] if e["starts_at"].startswith("2026-11-14")]
-    assert nov14 and all(not e["starts_at"].startswith("2026-11-14T17:00") for e in nov14)
+    practices = [e for e in nov14 if e["event_type"] == "practice"]
+    assert practices and all(not e["starts_at"].startswith("2026-11-14T17:00") for e in practices)
+    assert any(e["event_type"] == "game" and e["starts_at"].startswith("2026-11-14T17:00") for e in nov14)
 
 
 def test_plan_around_games_that_matched_nothing_fails_clearly() -> None:

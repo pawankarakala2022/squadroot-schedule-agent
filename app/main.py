@@ -715,10 +715,10 @@ def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # t
     try:
         if call == "plan":
             proposal = agent.plan(problem, kwargs["request"], previous=kwargs.get("previous"),
-                                  verify=mock_verify_hook(problem))
+                                  verify=mock_verify_hook(problem), games=kwargs.get("games"))
         elif call == "revise":
             proposal = agent.revise(problem, kwargs["proposal"], kwargs["request"],
-                                    verify=mock_verify_hook(problem))
+                                    verify=mock_verify_hook(problem), games=kwargs.get("games"))
         elif call == "reschedule":
             proposal = agent.reschedule(problem, kwargs["events"], kwargs["request"],
                                         verify=mock_verify_hook(problem))
@@ -730,7 +730,7 @@ def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # t
         elif call == "run":
             proposal = agent.handle(problem, kwargs["request"], proposal=kwargs.get("proposal"),
                                     events=kwargs.get("events"), previous=kwargs.get("previous"),
-                                    verify=mock_verify_hook(problem))
+                                    verify=mock_verify_hook(problem), games=kwargs.get("games"))
         else:
             raise HTTPException(400, f"Unknown call {call!r}.")
     except HTTPException:
@@ -813,14 +813,18 @@ def get_calendar() -> dict:
 
 
 def _problem_with_games(body: dict) -> tuple[Problem, list[Busy]]:
-    """Club problem plus league-game busy from ``body['games']`` (if any)."""
+    """Base club problem plus the game busy ``body['games']`` would create.
+
+    The agent receives the games themselves (as fixed game events), so
+    the returned problem deliberately does not carry their busy -- the
+    busy list is only for deciding the default request text.
+    """
     extra = [Busy.from_dict(b) for b in body.get("extra_busy", [])]
     problem = club_problem(extra)
     games = body.get("games")
     if not games:
         return problem, []
-    game_busy = games_to_busy(ScheduleImport.from_dict(games), problem)
-    return club_problem(extra + game_busy), game_busy
+    return problem, games_to_busy(ScheduleImport.from_dict(games), problem)
 
 
 def _request_with_games_default(body: dict, game_busy: list[Busy]) -> str:
@@ -850,7 +854,8 @@ def api_plan(body: dict) -> dict:
     """Plan a draft from a request; extra_busy adds host-known busy; games adds league games."""
     problem, game_busy = _problem_with_games(body)
     return run_agent(body.get("mode", "mock"), "plan", problem=problem,
-                     request=_request_with_games_default(body, game_busy), previous=body.get("previous"))
+                     request=_request_with_games_default(body, game_busy), previous=body.get("previous"),
+                     games=body.get("games"))
 
 
 @app.post("/api/revise")
@@ -858,7 +863,8 @@ def api_revise(body: dict) -> dict:
     """Revise a draft; everything else is kept."""
     problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
     return run_agent(body.get("mode", "mock"), "revise", problem=problem,
-                     proposal=body.get("proposal"), request=body.get("request", ""))
+                     proposal=body.get("proposal"), request=body.get("request", ""),
+                     games=body.get("games"))
 
 
 @app.post("/api/reschedule")
@@ -897,7 +903,8 @@ def api_run(body: dict) -> dict:
     problem, game_busy = _problem_with_games(body)
     return run_agent(body.get("mode", "mock"), "run", problem=problem,
                      request=_request_with_games_default(body, game_busy), proposal=body.get("proposal"),
-                     events=body.get("events"), previous=body.get("previous"))
+                     events=body.get("events"), previous=body.get("previous"),
+                     games=body.get("games"))
 
 
 _STREAM_LABELS = {
@@ -928,10 +935,12 @@ def _stream_kwargs(call: str, body: dict) -> dict:
     """run_agent kwargs for a stream call; mirrors the /api/plan|revise|reschedule|cancel|run bodies."""
     if call == "plan":
         problem, game_busy = _problem_with_games(body)
-        return {"problem": problem, "request": _request_with_games_default(body, game_busy), "previous": body.get("previous")}
+        return {"problem": problem, "request": _request_with_games_default(body, game_busy),
+                "previous": body.get("previous"), "games": body.get("games")}
     if call == "revise":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
-        return {"problem": problem, "proposal": body.get("proposal"), "request": body.get("request", "")}
+        return {"problem": problem, "proposal": body.get("proposal"), "request": body.get("request", ""),
+                "games": body.get("games")}
     if call == "reschedule":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
         return {"problem": problem, "events": body.get("events", []), "request": body.get("request", "")}
@@ -944,7 +953,7 @@ def _stream_kwargs(call: str, body: dict) -> dict:
         problem, game_busy = _problem_with_games(body)
         return {"problem": problem, "request": _request_with_games_default(body, game_busy),
                 "proposal": body.get("proposal"), "events": body.get("events"),
-                "previous": body.get("previous")}
+                "previous": body.get("previous"), "games": body.get("games")}
     raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule, cancel, add or run.")
 
 

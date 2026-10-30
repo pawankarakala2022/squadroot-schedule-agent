@@ -1,5 +1,26 @@
 # Changelog
 
+## v5.1.0 (2026-10-29)
+
+Additive, backward compatible (new optional keyword, new helper):
+uploaded league games are now in the proposal, not just around it.
+Previously `games_to_busy` was the only bridge, so "Plan around these
+games" produced a practice-only schedule -- the games blocked (or, on
+their own weekday, did not affect) practice slots but never appeared
+in the events, calendar, summary, checks, approval or notices. New
+`games_to_events(schedule, problem)` turns each blocking game with a
+known team and field into one fixed `game` ProposedEvent titled with
+both printed names, and `ScheduleAgent.plan` / `revise` / `handle`
+accept `games=` (a ScheduleImport or its dict): the game events are
+never moved, they block practice time while solving, and the final
+checks run on practices + games together (the games' own busy is
+excluded so a game cannot fail against itself; a practice on its team
+or field is caught as a double booking; the recurring gap rule is not
+re-imposed against unmovable fixtures). Demo: /api/plan, /api/run and
+/api/revise (plus stream) pass the uploaded games through, so the
+Nov 14 Greyhawks fixtures show as four game events alongside the
+practices in Review and are approved/notified with them.
+
 ## v5.0.2 (2026-10-29)
 
 Bug fix, no name or shape changed: explicit additions are accepted at
