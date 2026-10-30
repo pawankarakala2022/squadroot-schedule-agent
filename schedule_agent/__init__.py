@@ -38,6 +38,7 @@ from .vision import (
     games_to_busy,
     games_to_events,
 )
+from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits
 from .voice import VoiceConfig, transcribe_audio
 
 __version__ = "5.1.0"
@@ -93,4 +94,9 @@ __all__ = [
     "extract_games",
     "games_to_busy",
     "games_to_events",
+    "SessionTarget",
+    "Placement",
+    "EditOp",
+    "EditPlan",
+    "parse_edits",
 ]
