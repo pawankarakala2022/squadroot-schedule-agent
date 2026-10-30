@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import queue
 import threading
 from collections.abc import Callable
@@ -811,8 +812,47 @@ def _understood(problem, trace, before) -> list:  # type: ignore[no-untyped-def]
     return chips
 
 
+# Spanish forms of the demo club's English team/field names (voice
+# transcripts sometimes translate them; the agent matches English only).
+_ES_CLUB_FORMS: dict[str, tuple[str, ...]] = {
+    "Foxes": ("zorros", "zorro"),
+    "Badgers": ("tejones", "tejón", "tejon"),
+    "Otters": ("nutrias", "nutria"),
+    "Wolves": ("lobos", "lobo"),
+    "North Field": ("campo norte", "cancha norte"),
+    "South Field": ("campo sur", "cancha sur"),
+}
+
+_ES_MARKERS = (
+    "práctica", "practica", "entrenamiento", "equipo", "zorros", "tejones",
+    "nutrias", "lobos", "campo norte", "campo sur", "lunes", "martes",
+    "miércoles", "miercoles", "jueves", "viernes", "sábado", "sabado",
+    "domingo", "mueve", "cancela", "añade", "anade",
+)
+
+
+def _english_club_names(text: str) -> str:
+    """Put translated demo team/field names back in English."""
+    out = text
+    for english, forms in _ES_CLUB_FORMS.items():
+        for form in forms:
+            out = re.sub(r"\b(?:los\s+|las\s+|el\s+|la\s+)?" + re.escape(form) + r"\b",
+                         english, out, flags=re.IGNORECASE)
+    return out
+
+
+def _request_language(body: dict) -> str:
+    """Explicit body language wins; else Spanish wording means ``es``."""
+    explicit = str(body.get("language") or "").lower()
+    if explicit.startswith(("en", "es")):
+        return "es" if explicit.startswith("es") else "en"
+    text = str(body.get("request") or "").lower()
+    return "es" if any(marker in text for marker in _ES_MARKERS) else "en"
+
+
 def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # type: ignore[no-untyped-def]
     """Run one agent call with the mock coach hook; return proposal + trace."""
+    language = str(kwargs.pop("language", "en") or "en")
     chat = _chat if _chat is not None else make_chat(mode)
     # Deterministic English summaries: no slow explain model call in the demo.
     agent = ScheduleAgent(chat, deterministic_summary=True)
@@ -820,23 +860,23 @@ def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # t
     try:
         if call == "plan":
             proposal = agent.plan(problem, kwargs["request"], previous=kwargs.get("previous"),
-                                  verify=mock_verify_hook(problem), games=kwargs.get("games"))
+                                  verify=mock_verify_hook(problem), games=kwargs.get("games"), language=language)
         elif call == "revise":
             proposal = agent.revise(problem, kwargs["proposal"], kwargs["request"],
-                                    verify=mock_verify_hook(problem), games=kwargs.get("games"))
+                                    verify=mock_verify_hook(problem), games=kwargs.get("games"), language=language)
         elif call == "reschedule":
             proposal = agent.reschedule(problem, kwargs["events"], kwargs["request"],
-                                        verify=mock_verify_hook(problem))
+                                        verify=mock_verify_hook(problem), language=language)
         elif call == "cancel":
-            proposal = agent.cancel(problem, kwargs["events"], kwargs["request"])
+            proposal = agent.cancel(problem, kwargs["events"], kwargs["request"], language=language)
         elif call == "add":
             proposal = agent.add(problem, kwargs["events"], kwargs["request"],
-                                 verify=mock_verify_hook(problem))
+                                 verify=mock_verify_hook(problem), language=language)
         elif call == "run":
             proposal = agent.handle(problem, kwargs["request"], proposal=kwargs.get("proposal"),
                                     events=kwargs.get("events"), previous=kwargs.get("previous"),
                                     verify=mock_verify_hook(problem), games=kwargs.get("games"),
-                                    selected_session_ids=kwargs.get("selected_session_ids"))
+                                    selected_session_ids=kwargs.get("selected_session_ids"), language=language)
         else:
             raise HTTPException(400, f"Unknown call {call!r}.")
     except HTTPException:
@@ -961,7 +1001,7 @@ def api_plan(body: dict) -> dict:
     problem, game_busy = _problem_with_games(body)
     return run_agent(body.get("mode", "mock"), "plan", problem=problem,
                      request=_request_with_games_default(body, game_busy), previous=body.get("previous"),
-                     games=body.get("games"))
+                     games=body.get("games"), language=_request_language(body))
 
 
 @app.post("/api/revise")
@@ -970,7 +1010,7 @@ def api_revise(body: dict) -> dict:
     problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
     return run_agent(body.get("mode", "mock"), "revise", problem=problem,
                      proposal=body.get("proposal"), request=body.get("request", ""),
-                     games=body.get("games"))
+                     games=body.get("games"), language=_request_language(body))
 
 
 @app.post("/api/reschedule")
@@ -978,7 +1018,7 @@ def api_reschedule(body: dict) -> dict:
     """Move only the sessions hit by a disruption."""
     problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
     return run_agent(body.get("mode", "mock"), "reschedule", problem=problem,
-                     events=body.get("events", []), request=body.get("request", ""))
+                     events=body.get("events", []), request=body.get("request", ""), language=_request_language(body))
 
 
 @app.post("/api/cancel")
@@ -986,7 +1026,7 @@ def api_cancel(body: dict) -> dict:
     """Cancel the sessions matching a request."""
     problem = club_problem()
     return run_agent(body.get("mode", "mock"), "cancel", problem=problem,
-                     events=body.get("events", []), request=body.get("request", ""))
+                     events=body.get("events", []), request=body.get("request", ""), language=_request_language(body))
 
 
 @app.post("/api/add")
@@ -994,7 +1034,7 @@ def api_add(body: dict) -> dict:
     """Add new session(s) to a saved calendar; existing sessions never move."""
     problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
     return run_agent(body.get("mode", "mock"), "add", problem=problem,
-                     events=body.get("events", []), request=body.get("request", ""))
+                     events=body.get("events", []), request=body.get("request", ""), language=_request_language(body))
 
 
 @app.post("/api/run")
@@ -1010,7 +1050,8 @@ def api_run(body: dict) -> dict:
     return run_agent(body.get("mode", "mock"), "run", problem=problem,
                      request=_request_with_games_default(body, game_busy), proposal=body.get("proposal"),
                      events=body.get("events"), previous=body.get("previous"),
-                     games=body.get("games"), selected_session_ids=body.get("selected_session_ids"))
+                     games=body.get("games"), selected_session_ids=body.get("selected_session_ids"),
+                     language=_request_language(body))
 
 
 _STREAM_LABELS = {
@@ -1043,24 +1084,28 @@ def _stream_kwargs(call: str, body: dict) -> dict:
     if call == "plan":
         problem, game_busy = _problem_with_games(body)
         return {"problem": problem, "request": _request_with_games_default(body, game_busy),
-                "previous": body.get("previous"), "games": body.get("games")}
+                "previous": body.get("previous"), "games": body.get("games"), "language": _request_language(body)}
     if call == "revise":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
         return {"problem": problem, "proposal": body.get("proposal"), "request": body.get("request", ""),
-                "games": body.get("games")}
+                "games": body.get("games"), "language": _request_language(body)}
     if call == "reschedule":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
-        return {"problem": problem, "events": body.get("events", []), "request": body.get("request", "")}
+        return {"problem": problem, "events": body.get("events", []), "request": body.get("request", ""),
+                "language": _request_language(body)}
     if call == "cancel":
-        return {"problem": club_problem(), "events": body.get("events", []), "request": body.get("request", "")}
+        return {"problem": club_problem(), "events": body.get("events", []), "request": body.get("request", ""),
+                "language": _request_language(body)}
     if call == "add":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
-        return {"problem": problem, "events": body.get("events", []), "request": body.get("request", "")}
+        return {"problem": problem, "events": body.get("events", []), "request": body.get("request", ""),
+                "language": _request_language(body)}
     if call == "run":
         problem, game_busy = _problem_with_games(body)
         return {"problem": problem, "request": _request_with_games_default(body, game_busy),
                 "proposal": body.get("proposal"), "events": body.get("events"),
-                "previous": body.get("previous"), "games": body.get("games"), "selected_session_ids": body.get("selected_session_ids")}
+                "previous": body.get("previous"), "games": body.get("games"), "selected_session_ids": body.get("selected_session_ids"),
+                "language": _request_language(body)}
     raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule, cancel, add or run.")
 
 
@@ -1185,6 +1230,8 @@ def voice_result(mode: str, data: bytes, filename: str, mime_type: str | None) -
         text = transcribe_audio(config, data, filename=filename, mime_type=mime_type, usage_out=usage)
     except ModelError as exc:
         raise HTTPException(400, str(exc)) from exc
+    # Team/field names stay in English even when the note was in Spanish.
+    text = _english_club_names(text)
     # Surface the split: transcription time vs the agent run that follows.
     return {"transcript": text, "mock": False,
             "latency_ms": usage.get("latency_ms"), "model": usage.get("model")}

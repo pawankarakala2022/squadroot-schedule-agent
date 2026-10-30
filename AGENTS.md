@@ -4,7 +4,7 @@ Read this file and `docs/PLAN.md` before every task.
 
 ## What this is
 
-SquadRoot Schedule Agent: a club operations agent for volunteer-run community sports clubs.
+SquadRoot Schedule Agent: a club operations agent for sports clubs.
 A club manager or coach describes scheduling work in plain words, by voice, or with a photo / PDF
 of a league schedule, in any language. The agent turns it into a conflict-free schedule, checks
 every proposal, explains it, drafts the family notice in each family's language, and waits for a

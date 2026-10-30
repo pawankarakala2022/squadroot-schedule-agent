@@ -136,7 +136,7 @@ Deploy the demo somewhere public (e.g. Railway / Render / Fly) with a spend-limi
 ## Video outline (3:00)
 
 - 0:00 One line: "SquadRoot is our existing club app. Everything you see here was built this week, in a
-  new open-source repo." Then the problem: a volunteer manager spends a weekend on the field schedule.
+  new open-source repo." Then the problem: a club manager spends a weekend on the field schedule.
 - 0:20 Voice note in Spanish -> plan in seconds, checks all green.
 - 1:00 Photo of the league game schedule -> practices re-flow around games.
 - 1:30 A bad request / injection attempt -> checks catch it, agent explains.

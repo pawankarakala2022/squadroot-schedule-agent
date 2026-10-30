@@ -20,6 +20,7 @@ from .dates import problem_date_hints
 from .errors import AgentError
 from .llm import ChatFn
 from .models import Problem
+from .textnorm import normalize_request_names
 
 MIN_SEARCH_DAYS = 1
 MAX_SEARCH_DAYS = 14
@@ -285,7 +286,7 @@ def parse_disruption(problem: Problem, request: str, chat: ChatFn, *, language: 
         raise AgentError("Please describe the disruption (which dates, which fields are closed).")
     fields = _field_aliases(problem)
     field_names = {a: next(f.name for f in problem.fields if f.id == fid) for a, fid in fields.items()}
-    messages = _prompt(problem, field_names, request.strip(), language)
+    messages = _prompt(problem, field_names, normalize_request_names(problem, request.strip()), language)
     schema = _schema()
     try:
         first = chat(messages, response_format=schema)

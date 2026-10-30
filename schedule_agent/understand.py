@@ -17,6 +17,7 @@ from .dates import problem_date_hints, today_in_tz
 from .errors import AgentError
 from .llm import ChatFn
 from .models import Problem, Requirement, Rules
+from .textnorm import normalize_request_names
 
 MAX_SESSIONS_PER_WEEK = 7
 MIN_DURATION_MINUTES = 15
@@ -395,7 +396,7 @@ def understand_request(problem: Problem, request: str, chat: ChatFn, *, language
             field_names[a] = f"{f.name} ({f.open_from.isoformat()}->{f.open_until.isoformat()})"
         else:
             field_names[a] = f.name
-    messages = _prompt(problem, team_names, field_names, request.strip(), language)
+    messages = _prompt(problem, team_names, field_names, normalize_request_names(problem, request.strip()), language)
     schema = _rules_schema()
     try:
         first = chat(messages, response_format=schema)

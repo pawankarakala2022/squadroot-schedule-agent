@@ -224,6 +224,22 @@ function renderUnderstood() {
   box.innerHTML = S.understood.map((c) => "<span class=\"chip ok\">" + esc(c.text) + "</span>").join(" ");
   box.classList.remove("muted");
 }
+const ES_NAMES = { zorros: "Foxes", zorro: "Foxes", tejones: "Badgers", tejon: "Badgers", nutrias: "Otters", nutria: "Otters", lobos: "Wolves", lobo: "Wolves", "campo norte": "North Field", "campo sur": "South Field" };
+function englishName(text) { let out = text; for (const [es, en] of Object.entries(ES_NAMES)) out = out.replace(new RegExp("\\b(los\\s+|las\\s+)?" + es + "\\b", "gi"), en); return out; }
+function correctedRequest(answer) {
+  const base = englishName((S.lastRequest || $("request").value || "").trim());
+  const teams = ((S.club || {}).teams || []).map((t) => t.name), fields = ((S.club || {}).fields || []).map((f) => f.name);
+  const team = teams.find((n) => new RegExp("\\b" + n + "\\b", "i").test(englishName(answer)));
+  const field = fields.find((n) => new RegExp("\\b" + n + "\\b", "i").test(englishName(answer)));
+  const date = (answer.match(/\b\d{4}-\d{2}-\d{2}\b/) || [])[0], time = (answer.match(/\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b/i) || [])[0];
+  if (!team && !field && !date && !time) return base + " " + answer;
+  let out = base;
+  if (team) { let done = false; for (const n of teams) if (n !== team && new RegExp("\\b" + n + "\\b", "i").test(out)) { out = out.replace(new RegExp("\\b" + n + "\\b", "gi"), team); done = true; } if (!done && !new RegExp("\\b" + team + "\\b", "i").test(out)) out = team + ": " + out; }
+  if (field) { let done = false; for (const n of fields) if (n !== field && new RegExp("\\b" + n + "\\b", "i").test(out)) { out = out.replace(new RegExp("\\b" + n + "\\b", "gi"), field); done = true; } if (!done && !new RegExp("\\b" + field + "\\b", "i").test(out)) out = out + " on " + field; }
+  if (date) out = /\b\d{4}-\d{2}-\d{2}\b/.test(out) ? out.replace(/\b\d{4}-\d{2}-\d{2}\b/, date) : out + " on " + date;
+  if (time) out = /\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b/i.test(out) ? out.replace(/\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b/i, time) : out + " at " + time;
+  return out;
+}
 function renderQuestions() {
   const box = $("questions");
   if (!S.questions.length) { box.hidden = true; box.innerHTML = ""; return; }
@@ -231,9 +247,9 @@ function renderQuestions() {
     S.questions.map((q) => "<p>" + esc(q) + "</p>").join("") +
     "<div class=\"row\"><input id=\"question-answer\" type=\"text\" placeholder=\"Type your answer\" style=\"flex:1;min-height:2.9rem\"><button id=\"question-send\" type=\"button\" class=\"primary\" style=\"width:auto\">Send answer</button>" +
     "<button id=\"question-discard\" type=\"button\">Discard this proposal</button></div>" +
-    "<p class=\"hint\">Your answer is added to your request and sent again. Nothing is saved until you approve.</p></div>";
+    "<p class=\"hint\">Team, field, date and time answers correct your request in place; extra requests are added. Nothing is saved until you approve.</p></div>";
   box.hidden = false;
-  $("question-send").addEventListener("click", () => { const a = $("question-answer").value.trim(); if (!a) return; $("request").value = (S.lastRequest || $("request").value) + " " + a; run("run"); });
+  $("question-send").addEventListener("click", () => { const a = $("question-answer").value.trim(); if (!a) return; $("request").value = correctedRequest(a); run("run"); });
   $("question-discard").addEventListener("click", () => { S.proposal = null; S.events = []; S.diff = null; S.questions = []; box.hidden = true; $("summary").textContent = "Proposal discarded. Your current schedule in Plan is unchanged."; renderDiff(); syncButtons(); });
 }
 function renderClarify(c) {

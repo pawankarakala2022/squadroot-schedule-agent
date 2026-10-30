@@ -41,7 +41,7 @@ the evidence below is from live Meta models.
 - **How this was judged internally:** a three-stage judging evaluation (pass/fail
   viability, 0–10 rubric scoring, live-video final) was run against this repo; its gap
   checklist drove the work above. The remaining gaps are deployment-free: feedback from
-  volunteer managers and the 3-minute demo video.
+  club managers and the 3-minute demo video.
 
 ## What was built during the hackathon
 

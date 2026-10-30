@@ -28,6 +28,7 @@ from .dates import problem_date_hints, today_in_tz
 from .errors import AgentError
 from .llm import ChatFn
 from .models import Problem, ProposedEvent
+from .textnorm import normalize_request_names
 
 ACTIONS: tuple[str, ...] = (
     "create_once",
@@ -948,9 +949,10 @@ def parse_edits(
     if not isinstance(request, str) or not request.strip():
         raise AgentError("Please describe the scheduling change (what to move, cancel, add or block).")
     source = _source_events(events, draft)
-    visible, labels = visible_sessions(problem, request.strip(), source, selected_session_ids)
+    clean_request = normalize_request_names(problem, request.strip())
+    visible, labels = visible_sessions(problem, clean_request, source, selected_session_ids)
     teams, fields = _aliases(problem)
-    messages = _prompt(problem, request.strip(), language, visible, labels, selected_session_ids)
+    messages = _prompt(problem, clean_request, language, visible, labels, selected_session_ids)
     schema = _edit_schema()
     try:
         first = chat(messages, response_format=schema)
@@ -962,7 +964,7 @@ def parse_edits(
         raise _ModelError("Assistant unavailable.") from exc
     data, parse_issues = _parse_json(first)
     if data is not None:
-        plan, issues = _clean_plan(data, problem, teams, fields, labels, source, request)
+        plan, issues = _clean_plan(data, problem, teams, fields, labels, source, clean_request)
         issues = parse_issues + issues
     else:
         plan, issues = None, parse_issues
@@ -984,7 +986,7 @@ def parse_edits(
             raise _ModelError("Assistant unavailable.") from exc
         data2, parse_issues2 = _parse_json(second)
         if data2 is not None:
-            plan, issues = _clean_plan(data2, problem, teams, fields, labels, source, request)
+            plan, issues = _clean_plan(data2, problem, teams, fields, labels, source, clean_request)
             issues = parse_issues2 + issues
         else:
             plan, issues = None, parse_issues2

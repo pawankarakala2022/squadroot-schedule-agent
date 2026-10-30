@@ -423,3 +423,12 @@ def test_dotenv_via_env_file_variable(
     finally:
         for var in ("MODEL_API_KEY", "META_MODEL_API_BASE", "META_MODEL"):
             os.environ.pop(var, None)
+
+def test_spanish_names_stay_english_and_language_detected() -> None:
+    from app.main import _english_club_names, _request_language
+
+    assert _english_club_names("Los Zorros en Campo Norte") == "Foxes en North Field"
+    assert _request_language({"request": "Los Zorros practican los jueves"}) == "es"
+    assert _request_language({"request": "Foxes practice on Thursdays"}) == "en"
+    html = index().path.read_text(encoding="utf-8")
+    assert "correctedRequest" in html and "correct your request in place" in html

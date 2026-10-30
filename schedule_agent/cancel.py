@@ -22,6 +22,7 @@ from .dates import problem_date_hints
 from .errors import AgentError
 from .llm import ChatFn
 from .models import Problem, ProposedEvent
+from .textnorm import normalize_request_names
 
 
 @dataclass
@@ -314,7 +315,7 @@ def parse_cancel_filter(problem: Problem, request: str, chat: ChatFn, *, languag
     teams, fields = _aliases(problem)
     team_names = {a: next(t.name for t in problem.teams if t.id == tid) for a, tid in teams.items()}
     field_names = {a: next(f.name for f in problem.fields if f.id == fid) for a, fid in fields.items()}
-    messages = _prompt(problem, team_names, field_names, request.strip(), language)
+    messages = _prompt(problem, team_names, field_names, normalize_request_names(problem, request.strip()), language)
     schema = _schema()
     try:
         first = chat(messages, response_format=schema)

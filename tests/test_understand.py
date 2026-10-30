@@ -212,3 +212,20 @@ def test_en_blackout_range_expands_and_canonicalizes() -> None:
     assert got.latest_end == time(20, 0)
     assert rules.blackout_dates == [date(2026, 11, 16) + timedelta(days=i) for i in range(7)]
     assert rules_accuracy(rules, case.expected) == 1.0
+
+def test_spanish_translated_team_name_reaches_model_in_english() -> None:
+    problem = Problem(
+        teams=[Team(id="t1", name="Foxes"), Team(id="t2", name="Badgers")],
+        fields=[Field(id="f1", name="North Field", open_from=time(17, 0), open_until=time(20, 0))],
+        season_start=date(2026, 11, 1), season_end=date(2026, 11, 30), timezone=TZ,
+    )
+    seen: list = []
+
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        seen.append(messages)
+        return _payload([_good_req(team_alias="T1", allowed_field_aliases=["F1"])])
+
+    understand_request(problem, "Los Zorros practican en Campo Norte", chat, language="es")
+    sent = " ".join(m["content"] for m in seen[0])
+    assert "Foxes" in sent and "North Field" in sent
+    assert "Zorros" not in sent and "Campo Norte" not in sent
