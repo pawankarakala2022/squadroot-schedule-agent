@@ -180,7 +180,7 @@ def _messages(facts: str, languages: list[str]) -> list[dict[str, str]]:
     system = " ".join(
         [
             "Write one short family notice per requested language about",
-            "this youth-club schedule change.",
+            "this sports club schedule change.",
             "Languages: " + ", ".join(languages) + ".",
             "Same facts in every language: copy each team name, field",
             "name, date (YYYY-MM-DD) and time (HH:MM, 24h) exactly as",

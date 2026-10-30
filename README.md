@@ -2,7 +2,7 @@
 
 A club operations agent for sports clubs, built on Meta's Muse models.
 
-A club manager describes scheduling work in plain words, by voice, or with a photo of the league's
+A sports club manager describes scheduling work in plain words, by voice, or with a photo of the league's
 game schedule, in any language. The agent drafts a conflict-free schedule, proves every event passes
 its checks, explains the result, drafts the family notice in each family's language, and waits for a
 human to approve before anything changes.
@@ -41,7 +41,7 @@ the evidence below is from live Meta models.
 - **How this was judged internally:** a three-stage judging evaluation (pass/fail
   viability, 0–10 rubric scoring, live-video final) was run against this repo; its gap
   checklist drove the work above. The remaining gaps are deployment-free: feedback from
-  club managers and the 3-minute demo video.
+  sports club managers and the 3-minute demo video.
 
 ## What was built during the hackathon
 

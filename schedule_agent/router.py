@@ -113,7 +113,7 @@ def _prompt(
     request: str, language: str, *, has_proposal: bool, has_events: bool, problem: Problem | None = None
 ) -> list[dict[str, str]]:
     lines = [
-        "You route a club manager's scheduling request to exactly one call.",
+        "You route a sports club manager's scheduling request to exactly one call.",
         "Calls: plan (new schedule from words; needs no calendar);",
         "revise (change the current draft's rules, e.g. move to Field 2, twice a week);",
         "reschedule (move saved sessions to a named new date or field, e.g. move Oct 29 to Oct 30, move Thursday to Friday);",

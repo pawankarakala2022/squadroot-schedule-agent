@@ -142,7 +142,7 @@ def _schema() -> dict:
 
 def _prompt(problem: Problem, field_names: dict[str, str], request: str, language: str) -> list[dict[str, str]]:
     lines = [
-        "You turn a club manager's disruption report (rain, closed fields) into strict JSON.",
+        "You turn a sports club manager's disruption report (rain, closed fields) into strict JSON.",
         "Fields (alias: name): " + ", ".join(f"{a}: {field_names[a]}" for a in sorted(field_names)) + ".",
         "Field names are English proper names: match them exactly as written; never translate or transliterate a name in any language.",
         f"Season: {problem.season_start.isoformat()} to {problem.season_end.isoformat()} ({problem.timezone}).",

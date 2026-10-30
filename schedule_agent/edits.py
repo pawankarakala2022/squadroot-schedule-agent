@@ -666,7 +666,7 @@ def _prompt(
         if sel_labels:
             selected_note = " The manager selected these sessions: " + ", ".join(sel_labels) + " ('this one' means those)."
     lines = [
-        "You turn a club manager's scheduling request into a list of changes (strict JSON).",
+        "You turn a sports club manager's scheduling request into a list of changes (strict JSON).",
         "Teams (alias: name): " + ", ".join(f"{a}: {team_names[a]}" for a in sorted(team_names)) + ".",
         "Fields (alias: name): " + ", ".join(f"{a}: {field_names[a]}" for a in sorted(field_names)) + ".",
         "Team and field names are English proper names: match them exactly; never translate a name.",

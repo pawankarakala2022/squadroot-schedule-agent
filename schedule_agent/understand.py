@@ -110,7 +110,7 @@ def _prompt(
     language: str,
 ) -> list[dict[str, str]]:
     lines = [
-        "You turn a club manager's scheduling request into strict JSON.",
+        "You turn a sports club manager's scheduling request into strict JSON.",
         "Teams (alias: name): " + ", ".join(f"{a}: {team_names[a]}" for a in sorted(team_names)) + ".",
         "Fields (alias: name, hours): " + ", ".join(f"{a}: {field_names[a]}" for a in sorted(field_names)) + ".",
         "Team and field names are English proper names: match them exactly as written; never translate or transliterate a name in any language.",

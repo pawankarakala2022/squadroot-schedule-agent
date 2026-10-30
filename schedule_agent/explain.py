@@ -134,7 +134,7 @@ def explain_proposal(
         {
             "role": "system",
             "content": (
-                "Summarize this youth-club schedule for the manager in "
+                "Summarize this sports club schedule for the manager in "
                 f"{language}. At most 3 short sentences. Short plain words, no tactics or analysis. "
                 "Copy every team and field name exactly as given (English proper names); "
                 "never translate or transliterate a name. "

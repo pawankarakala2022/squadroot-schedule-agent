@@ -30,7 +30,7 @@ unless every name is from a SquadRoot demo club and still fictional.
 
 ## 2. Fifteen-minute feedback session (3–5 people)
 
-Recruit volunteer coaches, managers, or parents. Target mix: at least one
+Recruit sports club managers, coaches, or parents. Target mix: at least one
 person who currently makes a club schedule by hand. Run on the demo club
 (mock mode is fine; say so). Do not lead: read the tasks, then stay quiet.
 
@@ -96,7 +96,7 @@ Results (leave blank until measured; report medians if run more than once):
 | Season schedule | | | | | |
 | Rain re-plan | | | | | |
 
-Claim rule: the video and README may only say "a volunteer took X to do
+Claim rule: the video and README may only say "a club manager took X to do
 this by hand; the agent drafted it in Y, with every session checked" —
 with X and Y from this table, the fixture named, and the session labelled
 as a feedback session. No table, no number.
