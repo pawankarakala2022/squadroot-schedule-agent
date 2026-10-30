@@ -44,6 +44,7 @@ from schedule_agent import (
     games_to_busy,
     transcribe_audio,
 )
+from schedule_agent.llm import request_timeout_from_env
 
 ROOT = Path(__file__).resolve().parent.parent
 CLUB_PATH = ROOT / "demo" / "club.json"
@@ -68,6 +69,7 @@ _DOTENV_ALLOWLIST = frozenset(
         "META_MODEL_API_BASE",
         "MODEL_API_KEY",
         "META_MODEL",
+        "META_MODEL_TIMEOUT_SECONDS",
         "META_TRANSCRIBE_MODEL",
         "OPEN_MODEL_API_BASE",
         "OPEN_MODEL_API_KEY",
@@ -635,7 +637,7 @@ def make_chat(mode: str) -> ChatFn:
         config = ModelConfig.from_env()
         if config is None:
             raise HTTPException(400, "Meta API mode needs MODEL_API_KEY in .env (or use Mock mode).")
-        return _cached_chat(("meta", config.base_url, config.model, config.api_key),
+        return _cached_chat(("meta", config.base_url, config.model, config.api_key, config.timeout_seconds),
                             lambda: chat_fn(config))
     if mode == "open":
         _load_dotenv()
@@ -644,8 +646,10 @@ def make_chat(mode: str) -> ChatFn:
         model = os.environ.get("OPEN_MODEL", "") or "meta-models/muse-spark-open"
         if not base or not key:
             raise HTTPException(400, "Open-weights mode needs OPEN_MODEL_API_BASE/KEY in .env (or use Mock mode).")
-        return _cached_chat(("open", base, model, key),
-                            lambda: chat_fn(ModelConfig(base_url=base, model=model, api_key=key)))
+        timeout_seconds = request_timeout_from_env()
+        return _cached_chat(("open", base, model, key, timeout_seconds),
+                            lambda: chat_fn(ModelConfig(base_url=base, model=model, api_key=key,
+                                                        timeout_seconds=timeout_seconds)))
     raise HTTPException(400, f"Unknown mode {mode!r}; use mock, meta or open.")
 
 

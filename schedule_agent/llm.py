@@ -8,6 +8,7 @@ raise :class:`ModelError` without ever including the API key.
 
 from __future__ import annotations
 
+import math
 import os
 import threading
 import time
@@ -24,6 +25,28 @@ DEFAULT_MODEL = "muse-spark-1.3"
 REQUEST_TIMEOUT_SECONDS = 120.0
 CONNECT_TIMEOUT_SECONDS = 5.0
 RETRY_BACKOFF_SECONDS = 0.5
+
+# Env override for the model-answer wait budget; clamped so a typo
+# cannot hang a worker (or shrink the budget to nothing).
+TIMEOUT_ENV_VAR = "META_MODEL_TIMEOUT_SECONDS"
+MIN_TIMEOUT_SECONDS = 5.0
+MAX_TIMEOUT_SECONDS = 300.0
+
+
+def request_timeout_from_env() -> float:
+    """Model-answer wait budget in seconds from env, or the default.
+
+    Reads ``META_MODEL_TIMEOUT_SECONDS``; a missing or unparsable value
+    falls back to ``REQUEST_TIMEOUT_SECONDS``, and anything outside
+    5..300 seconds is clamped into that range.
+    """
+    try:
+        value = float(os.environ.get(TIMEOUT_ENV_VAR, ""))
+    except (TypeError, ValueError):
+        return REQUEST_TIMEOUT_SECONDS
+    if not math.isfinite(value):
+        return REQUEST_TIMEOUT_SECONDS
+    return max(MIN_TIMEOUT_SECONDS, min(MAX_TIMEOUT_SECONDS, value))
 
 # Message list + optional OpenAI-style response_format -> assistant text.
 ChatFn = Callable[..., str]
@@ -42,6 +65,7 @@ class ModelConfig:
     base_url: str
     model: str
     api_key: str
+    timeout_seconds: float = REQUEST_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         if not self.base_url or not isinstance(self.base_url, str):
@@ -51,20 +75,29 @@ class ModelConfig:
         _refuse_contributor(self.model)
         if not self.api_key or not isinstance(self.api_key, str):
             raise ValueError("ModelConfig.api_key must be a non-empty string")
+        timeout = self.timeout_seconds
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("ModelConfig.timeout_seconds must be a positive number of seconds")
 
     @classmethod
     def from_env(cls) -> ModelConfig | None:
         """Build from env, or None when no key is set.
 
         Reads ``META_MODEL_API_BASE`` (default https://api.meta.ai/v1),
-        ``MODEL_API_KEY`` and ``META_MODEL`` (default muse-spark-1.3).
+        ``MODEL_API_KEY``, ``META_MODEL`` (default muse-spark-1.3) and
+        ``META_MODEL_TIMEOUT_SECONDS`` (default 120, clamped to 5..300).
         """
         api_key = os.environ.get("MODEL_API_KEY", "")
         if not api_key:
             return None
         base_url = os.environ.get("META_MODEL_API_BASE", "") or DEFAULT_API_BASE
         model = os.environ.get("META_MODEL", "") or DEFAULT_MODEL
-        return cls(base_url=base_url, model=model, api_key=api_key)
+        return cls(
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            timeout_seconds=request_timeout_from_env(),
+        )
 
 
 def chat_fn(config: ModelConfig, *, temperature: float = 0.0) -> ChatFn:
@@ -92,7 +125,7 @@ def chat_fn(config: ModelConfig, *, temperature: float = 0.0) -> ChatFn:
                     # Connect/pool failures fail in seconds; only waiting
                     # for the model's answer gets the full read budget.
                     timeout = httpx.Timeout(
-                        REQUEST_TIMEOUT_SECONDS,
+                        config.timeout_seconds,
                         connect=CONNECT_TIMEOUT_SECONDS,
                         pool=CONNECT_TIMEOUT_SECONDS,
                     )

@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.1.0 (2026-10-30)
+
+Model request timeout is now configurable: `ModelConfig` gains an
+optional `timeout_seconds` (default 120), read from the new
+`META_MODEL_TIMEOUT_SECONDS` env var (clamped to 5..300) for both
+Meta API and open-weights demo modes. Backward compatible: existing
+three-argument `ModelConfig` construction is unchanged.
+
 ## v6.0.0 (2026-10-29)
 
 Breaking (request routing and Proposal shape): one model call now

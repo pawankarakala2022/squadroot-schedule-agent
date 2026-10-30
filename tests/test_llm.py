@@ -135,6 +135,60 @@ def test_chat_reuses_one_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
     assert built["n"] == 1
 
 
+def test_request_timeout_from_env_default_clamp_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from schedule_agent.llm import MAX_TIMEOUT_SECONDS, MIN_TIMEOUT_SECONDS, request_timeout_from_env
+
+    monkeypatch.delenv("META_MODEL_TIMEOUT_SECONDS", raising=False)
+    assert request_timeout_from_env() == llm.REQUEST_TIMEOUT_SECONDS == 120.0
+    monkeypatch.setenv("META_MODEL_TIMEOUT_SECONDS", "45")
+    assert request_timeout_from_env() == 45.0
+    monkeypatch.setenv("META_MODEL_TIMEOUT_SECONDS", "100000")
+    assert request_timeout_from_env() == MAX_TIMEOUT_SECONDS
+    monkeypatch.setenv("META_MODEL_TIMEOUT_SECONDS", "1")
+    assert request_timeout_from_env() == MIN_TIMEOUT_SECONDS
+    for bad in ("junk", "", "nan", "inf"):
+        monkeypatch.setenv("META_MODEL_TIMEOUT_SECONDS", bad)
+        assert request_timeout_from_env() == llm.REQUEST_TIMEOUT_SECONDS
+
+
+def test_from_env_carries_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MODEL_API_KEY", "k")
+    monkeypatch.delenv("META_MODEL_TIMEOUT_SECONDS", raising=False)
+    assert ModelConfig.from_env() is not None
+    config = ModelConfig.from_env()
+    assert config is not None and config.timeout_seconds == 120.0
+    monkeypatch.setenv("META_MODEL_TIMEOUT_SECONDS", "60")
+    config = ModelConfig.from_env()
+    assert config is not None and config.timeout_seconds == 60.0
+
+
+def test_config_rejects_bad_timeout() -> None:
+    for bad in (0, -1.5, float("nan"), float("inf"), "60", True):
+        with pytest.raises(ValueError):
+            ModelConfig(
+                base_url="https://api.meta.ai/v1", model="muse-spark-1.3", api_key="k",
+                timeout_seconds=bad,  # type: ignore[arg-type]
+            )
+
+
+def test_chat_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict = {}
+    real_factory = _factory(_ok("hi"))
+
+    def capturing(*args, **kwargs):  # type: ignore[no-untyped-def]
+        seen["timeout"] = kwargs.get("timeout")
+        return real_factory(*args, **kwargs)
+
+    monkeypatch.setattr(llm.httpx, "Client", capturing)
+    config = ModelConfig(
+        base_url="https://api.meta.ai/v1", model="muse-spark-1.3", api_key="k", timeout_seconds=60.0
+    )
+    assert chat_fn(config)([{"role": "user", "content": "hi"}]) == "hi"
+    assert isinstance(seen["timeout"], httpx.Timeout)
+    assert seen["timeout"].read == 60.0
+    assert seen["timeout"].connect == llm.CONNECT_TIMEOUT_SECONDS
+
+
 def test_chat_bad_shape_and_empty_are_model_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         llm.httpx, "Client", _factory(lambda request: httpx.Response(200, json={"nope": True}))

@@ -185,7 +185,7 @@ pinned git tag and calls the same public interface the demo app uses.
 ```python
 from schedule_agent import ModelConfig, chat_fn, ScheduleAgent
 
-config = ModelConfig.from_env()  # META_MODEL_API_BASE + MODEL_API_KEY + META_MODEL
+config = ModelConfig.from_env()  # META_MODEL_API_BASE + MODEL_API_KEY + META_MODEL (+ optional META_MODEL_TIMEOUT_SECONDS, default 120s)
 agent = ScheduleAgent(chat_fn(config))
 
 proposal = agent.handle(
@@ -241,7 +241,7 @@ agent calls identical:
 
 ## Performance notes (v4.3.0) — if a request feels slow
 
-- **Read `agent.last_trace` first.** Every solve/check step now carries `latency_ms`, as does every model call. At club scale the solver and checks are milliseconds to ~2s even for 100 teams; a step near 30,000ms is one model call hitting the client read timeout, not the solver. The voice endpoint also returns transcription `latency_ms`, so voice time and agent time are separate numbers.
+- **Read `agent.last_trace` first.** Every solve/check step now carries `latency_ms`, as does every model call. At club scale the solver and checks are milliseconds to ~2s even for 100 teams; a step near the read timeout (default 120,000ms) is one model call waiting for the model, not the solver. The voice endpoint also returns transcription `latency_ms`, so voice time and agent time are separate numbers.
 - **Budget model calls, not the solver.** Measured live: two sample requests took 21.5s and 42.1s, all of it route + understand + explain (solve/checks 0ms), and follow-ups burn the most completion tokens. Three cuts are built in:
   - **Fast routing:** unambiguous English fresh practice/game requests, and explicit "add a game/practice" against a calendar, route in code with no model call (trace step `route` with `source: "fast_path"`). Cancel/move/weather/negation wording and other languages still go to the model.
   - **Deterministic English summaries:** build the agent with `ScheduleAgent(chat, deterministic_summary=True)` to render English summaries in code and skip the explain call entirely. Other languages keep the model explain. The demo app does this.
@@ -250,7 +250,7 @@ agent calls identical:
 - **Explain stays small when the model does run.** Facts are recurring session patterns (max 80 lines), not one line per session, and the prompt caps the reply at 3 short sentences.
 - **Pass coach unavailability up front** in `Problem.busy` (parse it with `parse_availability` / `availability_to_busy`). Discovering it through the verify hook costs an extra solve round and turns blocked weekdays into surprise shortfalls after the first draft.
 - **Verify rounds multiply solve+check only** (max 3 re-solves, no model calls in the loop); a hook that returns new busy times every round is the usual cause of repeated work — return only genuinely new intervals.
-- **Provider ceiling:** connect/pool failures fail in 5s; waiting for a model answer is capped at 30s (`REQUEST_TIMEOUT_SECONDS`). If traces repeatedly show ~30s model steps after the cuts above, the fix is provider/model choice, not solver tuning.
+- **Provider ceiling:** connect/pool failures fail in 5s; waiting for a model answer is capped by `META_MODEL_TIMEOUT_SECONDS` (default 120s, clamped to 5..300; also settable per client via `ModelConfig(..., timeout_seconds=...)`). If traces repeatedly show model steps ending at that ceiling after the cuts above, the fix is provider/model choice, not solver tuning.
 
 ## License
 
