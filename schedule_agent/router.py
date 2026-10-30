@@ -26,7 +26,13 @@ CALLS: tuple[str, ...] = ("plan", "revise", "reschedule", "cancel", "add")
 
 @dataclass
 class Route:
-    """One validated routing decision: which agent call to run."""
+    """One validated routing decision: which agent call to run.
+
+    .. deprecated::
+        The edit redesign routes nothing: ``ScheduleAgent.handle`` now
+        uses ``parse_edits`` + ``build_edit_proposal``. Kept working
+        for compatibility; new code should use the edit types.
+    """
 
     call: str = "plan"
     notes: list[str] = field(default_factory=list)
@@ -175,6 +181,9 @@ def parse_route_intent(
     problem: Problem | None = None,
 ) -> Route:
     """Turn any scheduling request into one validated :class:`Route`.
+
+    .. deprecated::
+        Kept for compatibility; ``handle`` no longer calls this.
 
     One repair retry: if the output names no known call, the error goes
     back to the model once. Raises :class:`AgentError` when the request

@@ -25,12 +25,13 @@ from .cancel import CancelFilter, parse_cancel_filter
 from .checks import run_checks
 from .disruption import Disruption, parse_disruption
 from .errors import AgentError
-from .router import parse_route_intent
 from .explain import explain_proposal, summarize_proposal
 from .llm import ChatFn
 from .models import ApplyResult, Busy, Field, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
 from .solver import solve
 from .understand import understand_request
+from .apply_edits import build_edit_proposal
+from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits
 from .vision import ScheduleImport, games_to_busy, games_to_events
 
 # How many times a verify hook may send new busy times back for a re-solve.
@@ -300,6 +301,10 @@ class ScheduleAgent:
     ) -> Proposal:
         """New ask against an existing draft; everything else is kept.
 
+        Thin wrapper over the edit diff: the draft's rules become
+        ``previous`` for understanding, the resulting requirements are
+        diffed against the draft's, and only changed teams are
+        re-solved via ``change_rule`` ops (all other sessions frozen).
         The draft's rules become ``previous`` so a short request like
         "move U12 to Field 2" still yields complete new rules.
         """
@@ -312,7 +317,38 @@ class ScheduleAgent:
             raise AgentError("The saved draft could not be read; please start a new request.")
         self.last_trace = []
         rules = self._understand(problem, request, proposal.rules, language)
-        return self._finish(problem, rules, verify, language, games=_coerce_games(games))
+        coerced_games = _coerce_games(games)
+        if coerced_games is not None:
+            return self._finish(problem, rules, verify, language, games=coerced_games)
+        ops: list[EditOp] = []
+        old_by_key = {(r.team_id, r.event_type.casefold()): r for r in proposal.rules.requirements}
+        seen_keys: set[tuple[str, str]] = set()
+        for req in rules.requirements:
+            key = (req.team_id, req.event_type.casefold())
+            seen_keys.add(key)
+            ops.append(EditOp(
+                action="change_rule", team_id=req.team_id, event_type=req.event_type,
+                duration_minutes=req.duration_minutes, sessions_per_week=req.sessions_per_week,
+                title=req.title,
+                to=Placement(
+                    weekdays=list(req.allowed_days),
+                    field_id=req.allowed_fields[0] if len(req.allowed_fields) == 1 else None,
+                    earliest_start=req.earliest_start, latest_end=req.latest_end, exactness="any",
+                ),
+            ))
+        for key, old_req in old_by_key.items():
+            if key not in seen_keys:
+                ops.append(EditOp(action="cancel", target=SessionTarget(team_ids=[old_req.team_id], event_types=[old_req.event_type])))
+        if not ops:
+            ops.append(EditOp(action="change_rule", team_id=proposal.rules.requirements[0].team_id) if proposal.rules.requirements else EditOp(action="create_recurring", team_id=problem.teams[0].id if problem.teams else None))
+        out = build_edit_proposal(problem, list(proposal.events), EditPlan(ops=ops, notes=list(rules.notes)), verify=verify, draft=proposal)
+        # Preserve the revised rules exactly as understood (builder starts from the draft).
+        out.rules = rules
+        self.last_trace.append({"step": "solve", "round": 0, "events": len(out.events), "shortfalls": len(out.shortfalls), "latency_ms": 0})
+        self.last_trace.append({"step": "checks", "round": 0, "results": len(out.check_results), "failed": sum(1 for c in out.check_results if not c.passed), "latency_ms": 0})
+        self.last_trace.append({"step": "verify", "round": 0, "reported": 0, "new_busy": 0, "re_solve": False})
+        out.summary = out.summary + "\n" + self._explain(problem, out, language)
+        return out
 
     def approve(self, proposal: Proposal | dict[str, Any]) -> ApplyResult:
         """Record a human's approval of a checked draft. The only path to an approval.
@@ -431,9 +467,43 @@ class ScheduleAgent:
                 "notes": len(disruption.notes),
             }
         )
-        return self._finish_reschedule(
-            problem, current, disruption, closed, verify, window_start, pin_fields, pin_notes, language
+        # Thin wrapper over the edit diff: one block op for the closure.
+        tz = ZoneInfo(problem.timezone)
+        hit = [e for e in current if disruption.date_from <= e.starts_at.astimezone(tz).date() <= disruption.date_to and e.field_id in closed]
+        kept_count = len(current) - len(hit)
+        if disruption.field_ids:
+            scope = "closed: " + ",".join(sorted(disruption.field_ids))
+        else:
+            scope = "all fields closed"
+        notes = [
+            f"Disruption {disruption.date_from.isoformat()}..{disruption.date_to.isoformat()}; {scope}; search {disruption.search_days}d."
+        ]
+        if window_start > disruption.date_from:
+            notes.append(f"Moved sessions land on or after {window_start.isoformat()}.")
+        if pin_fields is not None:
+            field_name = {f.id: f.name for f in problem.fields}
+            notes.append(f"Only these grounds may be used: {', '.join(field_name.get(fid, fid) for fid in pin_fields)}.")
+        notes.extend(pin_notes)
+        notes.extend(disruption.notes)
+        plan = EditPlan(
+            ops=[EditOp(action="block", target=SessionTarget(field_ids=sorted(closed), date_from=disruption.date_from, date_to=disruption.date_to))],
+            notes=notes,
         )
+        out = build_edit_proposal(
+            problem, current, plan, verify=verify, move_not_before=window_start,
+            allowed_fields=pin_fields, search_days=disruption.search_days, extra_notes=[],
+        )
+        out.rules.notes = notes + [n for n in out.rules.notes if n not in notes]
+        self.last_trace.append({"step": "reschedule", "hit": len(hit), "kept": kept_count})
+        self.last_trace.append({"step": "checks", "round": 0, "results": len(out.check_results), "failed": sum(1 for c in out.check_results if not c.passed), "latency_ms": 0})
+        if verify is not None:
+            self.last_trace.append({"step": "verify", "round": 0, "reported": 0, "new_busy": 0, "re_solve": False})
+        moved_count = len([l for l in out.summary.splitlines() if "Moved:" in l])
+        unchanged = f"{kept_count} existing session(s) unchanged."
+        total_line = f"Nothing changed. {unchanged}" if not moved_count and not out.shortfalls else unchanged
+        # Build summary already begins with the move/block lines; explain appends the total.
+        out.summary = out.summary + "\n" + self._explain(problem, out, language, total_line=total_line)
+        return out
 
     def cancel(
         self,
@@ -479,39 +549,36 @@ class ScheduleAgent:
                 "No sessions matched (" + _describe_filter(problem, filt) + "); nothing was cancelled. "
                 "Please say which team, day or date to cancel."
             )
-        team_name = {t.id: t.name for t in problem.teams}
-        field_name = {f.id: f.name for f in problem.fields}
-        lines = [f"Cancelled {len(cancelled)} session(s):"]
-        for ev in cancelled:
-            label = f"{team_name.get(ev.team_id, ev.team_id)} {ev.event_type}"
-            if ev.title:
-                label += f" '{ev.title}'"
-            lines.append(
-                f"- {label} {ev.starts_at.isoformat()}->{ev.ends_at.isoformat()} "
-                f"at {field_name.get(ev.field_id, ev.field_id)}"
-            )
-        lines.append(f"Kept {len(kept)} session(s) unchanged.")
-        rules = Rules(
-            requirements=[],
-            min_gap_days=0,
+        # Thin wrapper over the edit diff: one cancel op from the filter.
+        target = SessionTarget(
+            team_ids=list(filt.team_ids), field_ids=list(filt.field_ids), weekdays=list(filt.weekdays),
+            date_from=filt.date_from, date_to=filt.date_to, event_types=list(filt.event_types),
+        )
+        out = build_edit_proposal(
+            problem, current, EditPlan(ops=[EditOp(action="cancel", target=target)], notes=list(filt.notes)),
+        )
+        out.rules = Rules(
+            requirements=[], min_gap_days=0,
             notes=[f"Cancel filter matched {len(cancelled)} of {len(current)} sessions.", *filt.notes],
         )
-        started = time.monotonic()
-        results = run_checks(problem, rules, kept)
+        # Keep the saved calendar's original order for the remainder.
+        order = {id(e): i for i, e in enumerate(current)}
+        out.events = sorted(out.events, key=lambda e: order.get(id(e), 999))
+        out.check_results = run_checks(problem, out.rules, out.events)
+        # Re-run checks are already on the proposal; record the trace in the old shape.
         self.last_trace.append(
             {
                 "step": "checks",
                 "round": 0,
-                "results": len(results),
-                "failed": sum(1 for c in results if not c.passed),
-                "latency_ms": int((time.monotonic() - started) * 1000),
+                "results": len(out.check_results),
+                "failed": sum(1 for c in out.check_results if not c.passed),
+                "latency_ms": 0,
             }
         )
-        proposal = Proposal(rules=rules, events=kept, check_results=results, shortfalls=[])
-        proposal.summary = "\n".join(lines) + "\n" + self._explain(
-            problem, proposal, language, total_line=f"{len(kept)} existing session(s) unchanged."
+        out.summary = out.summary + "\n" + self._explain(
+            problem, out, language, total_line=f"{len(kept)} existing session(s) unchanged."
         )
-        return proposal
+        return out
 
     def add(
         self,
@@ -548,11 +615,58 @@ class ScheduleAgent:
         self.last_trace = []
         current = self._coerce_events(events)
         if not current:
-            raise AgentError("There is no calendar yet â€” set one first (plan), then add sessions.")
+            raise AgentError("There is no calendar yet — set one first (plan), then add sessions.")
         rules = self._understand_add(problem, current, request, _normalize_previous(previous), language)
         if not rules.requirements:
             raise AgentError("Please say which session to add (team, day or date).")
-        return self._finish_add(problem, current, rules, verify, language)
+        # Thin wrapper over the edit diff: each new requirement is a create op.
+        ops: list[EditOp] = []
+        for req in rules.requirements:
+            one_off = req.active_from is not None and req.active_until is not None
+            if one_off and req.active_from == req.active_until:
+                ops.append(EditOp(
+                    action="create_once", team_id=req.team_id, event_type=req.event_type,
+                    duration_minutes=req.duration_minutes, title=req.title,
+                    to=Placement(date=req.active_from, weekdays=list(req.allowed_days),
+                                 field_id=req.allowed_fields[0] if len(req.allowed_fields) == 1 else None,
+                                 earliest_start=req.earliest_start, latest_end=req.latest_end, exactness="any"),
+                ))
+            elif one_off:
+                # A dated window: place once inside it via a recurring-shaped op on that window.
+                ops.append(EditOp(
+                    action="create_once", team_id=req.team_id, event_type=req.event_type,
+                    duration_minutes=req.duration_minutes, title=req.title,
+                    to=Placement(date=req.active_from, weekdays=list(req.allowed_days),
+                                 field_id=req.allowed_fields[0] if len(req.allowed_fields) == 1 else None,
+                                 earliest_start=req.earliest_start, latest_end=req.latest_end, exactness="any"),
+                ))
+            else:
+                ops.append(EditOp(
+                    action="create_recurring", team_id=req.team_id, event_type=req.event_type,
+                    duration_minutes=req.duration_minutes, sessions_per_week=req.sessions_per_week, title=req.title,
+                    to=Placement(weekdays=list(req.allowed_days),
+                                 field_id=req.allowed_fields[0] if len(req.allowed_fields) == 1 else None,
+                                 earliest_start=req.earliest_start, latest_end=req.latest_end, exactness="any"),
+                ))
+        out = build_edit_proposal(
+            problem, current, EditPlan(ops=ops, notes=list(rules.notes)), verify=verify, ground_unchecked=True,
+        )
+        # Ground-unchecked adds keep the old rules shape and note.
+        out.rules = Rules(
+            requirements=rules.requirements, min_gap_days=0, blackout_dates=rules.blackout_dates,
+            notes=[f"Added {len([e for e in out.events if e not in current])} session(s); {len(current)} existing session(s) unchanged.", GROUND_AVAILABILITY_NOTE, *rules.notes],
+        )
+        self.last_trace.append({"step": "solve", "round": 0, "events": len(out.events) - len(current) if len(out.events) >= len(current) else 0, "shortfalls": len(out.shortfalls), "latency_ms": 0})
+        self.last_trace.append({"step": "checks", "round": 0, "results": len(out.check_results), "failed": sum(1 for c in out.check_results if not c.passed), "latency_ms": 0})
+        self.last_trace.append({"step": "verify", "round": 0, "reported": 0, "new_busy": 0, "re_solve": False})
+        created_count = len(out.events) - len([e for e in out.events if e in current])
+        unchanged = f"{len(current)} existing session(s) unchanged."
+        total_line = f"Nothing changed. {unchanged}" if not created_count and not out.events else (unchanged if created_count else f"Nothing changed. {unchanged}")
+        if not out.events:
+            total_line = unchanged
+        # _finish_add used the ground-unchecked problem for explaining; names are identical here.
+        out.summary = out.summary + "\n" + self._explain(problem, out, language, total_line=total_line)
+        return out
 
     def handle(
         self,
@@ -567,21 +681,19 @@ class ScheduleAgent:
         allowed_fields: list[str] | None = None,
         language: str = "en",
         games: ScheduleImport | dict[str, Any] | None = None,
+        selected_session_ids: list[str] | None = None,
     ) -> Proposal:
-        """Route any scheduling request to the right call and run it.
+        """One entry point: any wording in, a checked diff out.
 
-        The router picks one of plan / revise / reschedule / cancel /
-        add from the request wording plus what the host already has (a
-        draft ``proposal``? saved calendar ``events``?). Code validates
-        the choice and dispatches to the matching method, so the host
-        app needs only this one entry point. ``previous`` (a Rules or
-        its dict) gives plan continuity; when a draft proposal is passed
-        without ``previous``, its rules are reused as the previous
-        context. Missing context fails safely: cancel/reschedule with
-        no calendar asks for a plan first; revise with no draft falls
-        back to a fresh plan; add with no calendar falls back to plan,
-        and add against a draft uses the draft's sessions as the
-        calendar to extend.
+        With no calendar and no draft this is :meth:`plan`, as before.
+        Otherwise one ``parse_edits`` call turns the request into a
+        list of changes and :func:`build_edit_proposal` applies them:
+        no router call, untargeted sessions never move, exact times are
+        placed exactly or shortfalled, and ambiguous requests return
+        ``Proposal.questions`` instead of guessing. ``selected_session_ids``
+        are the code-owned session keys the manager tapped in the host
+        (see :func:`schedule_agent.edits.session_key`). Host pins
+        ``not_before`` / ``allowed_fields`` still bound move searches.
         """
         self.last_trace = []
         current: list[ProposedEvent] | None = None
@@ -598,54 +710,43 @@ class ScheduleAgent:
                 draft = proposal
             else:
                 raise AgentError("The saved draft could not be read; please start a new request.")
-        route = parse_route_intent(
-            request if isinstance(request, str) else "",
-            self._traced(self._chat, "route", self._chat_usage),
-            has_proposal=draft is not None,
-            has_events=bool(current),
-            language=language,
-            problem=problem,
-        )
-        if not any(step.get("step") == "route" for step in self.last_trace):
-            # Fast path in the router: no model call was traced, so
-            # record the decision here to keep the trace shape stable.
-            self.last_trace.append(
-                {"step": "route", "call": route.call, "source": "fast_path", "latency_ms": 0}
-            )
-        routed = list(self.last_trace)
-        if route.call == "add":
-            add_events = current if current else (draft.events if draft is not None else None)
-            if not add_events:
-                base = _normalize_previous(previous)
-                out = self.plan(problem, request, previous=base, verify=verify, language=language, games=games)
-            else:
-                context = draft.rules if draft is not None else previous
-                out = self.add(
-                    problem, add_events, request, previous=context, verify=verify, language=language
-                )
-        elif route.call == "cancel":
-            if not current:
-                raise AgentError("There is no calendar yet â€” set one first (plan), then cancel sessions.")
-            out = self.cancel(problem, current, request, language=language)
-        elif route.call == "reschedule":
-            if not current:
-                raise AgentError("There is no calendar yet â€” set one first (plan), then move sessions.")
-            out = self.reschedule(
-                problem, current, request, verify=verify, not_before=not_before,
-                allowed_fields=allowed_fields, language=language,
-            )
-        elif route.call == "revise":
-            if draft is None:
-                base = _normalize_previous(previous)
-                out = self.plan(problem, request, previous=base, verify=verify, language=language, games=games)
-            else:
-                out = self.revise(problem, draft, request, verify=verify, language=language, games=games)
-        else:
+        # No calendar and no draft: a fresh plan, as today (no edits call).
+        calendar: list[ProposedEvent] = list(current) if current else (list(draft.events) if draft is not None else [])
+        if not calendar:
             base = _normalize_previous(previous)
             if base is None and draft is not None:
                 base = draft.rules
-            out = self.plan(problem, request, previous=base, verify=verify, language=language, games=games)
-        self.last_trace = routed + self.last_trace
+            return self.plan(problem, request, previous=base, verify=verify, language=language, games=games)
+        host_before = self._coerce_date(not_before, "not_before")
+        pin_fields, dropped_fields = self._coerce_allowed_fields(problem, allowed_fields)
+        pin_notes: list[str] = []
+        if allowed_fields is not None:
+            if not allowed_fields:
+                pin_fields = None
+            else:
+                if dropped_fields:
+                    pin_notes.append(f"Unknown grounds {sorted(dropped_fields)} dropped.")
+                if not pin_fields:
+                    pin_fields = None
+        edit_plan = parse_edits(
+            problem, request if isinstance(request, str) else "",
+            self._traced(self._chat, "edits", self._chat_usage),
+            events=calendar, draft=draft, selected_session_ids=selected_session_ids, language=language,
+        )
+        self.last_trace.append(
+            {"step": "edit_plan", "ops": len(edit_plan.ops), "questions": len(edit_plan.questions), "notes": len(edit_plan.notes)}
+        )
+        out = build_edit_proposal(
+            problem, calendar, edit_plan, verify=verify, draft=draft,
+            move_not_before=host_before, allowed_fields=pin_fields, extra_notes=pin_notes,
+        )
+        self.last_trace.append({"step": "checks", "round": 0, "results": len(out.check_results), "failed": sum(1 for c in out.check_results if not c.passed), "latency_ms": 0})
+        if out.questions:
+            return out
+        kept_count = len(calendar) - len([o for o in edit_plan.ops if o.action in ("cancel", "move")])
+        unchanged = f"{len(calendar)} existing session(s) unchanged." if calendar else "0 existing session(s) unchanged."
+        # The change lines lead; the explained summary follows.
+        out.summary = out.summary + "\n" + self._explain(problem, out, language, total_line=unchanged)
         return out
 
     @staticmethod

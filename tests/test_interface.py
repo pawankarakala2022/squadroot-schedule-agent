@@ -9,7 +9,10 @@ import json
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from schedule_agent import (
+    AgentError,
     ApplyResult,
     Busy,
     CancelFilter,
@@ -371,6 +374,108 @@ def test_approved_change_drafts_verified_family_notices() -> None:
     assert bundle.all_verified  # echoing the facts block echoes every exact token
     assert [n.language for n in bundle.notices] == ["es", "en"]
     assert FamilyNotices.from_dict(json.loads(json.dumps(bundle.to_dict()))) == bundle
+
+
+def _edit_payload(ops, questions=None):  # type: ignore[no-untyped-def]
+    return json.dumps({"ops": ops, "questions": questions or [], "notes": []})
+
+
+def _edit_op(action, target, to, **over):  # type: ignore[no-untyped-def]
+    base = {
+        "action": action, "target": target, "to": to, "team_alias": "", "event_type": "",
+        "duration_minutes": 0, "sessions_per_week": 0, "title": "", "notes": [],
+    }
+    base.update(over)
+    return base
+
+
+def _edit_target(**over):  # type: ignore[no-untyped-def]
+    base = {"session_labels": [], "team_aliases": [], "field_aliases": [], "weekdays": [], "date_from": "", "date_to": "", "event_types": []}
+    base.update(over)
+    return base
+
+
+def _edit_to(**over):  # type: ignore[no-untyped-def]
+    base = {"date": "", "start_time": "", "field_alias": "", "weekdays": [], "earliest_start": "", "latest_end": "", "exactness": "any"}
+    base.update(over)
+    return base
+
+
+def _edit_problem_and_calendar():  # type: ignore[no-untyped-def]
+    tz = ZoneInfo(TZ)
+    problem = Problem(
+        teams=[Team(id="t1", name="U12")],
+        fields=[Field(id="f1", name="North", open_from=time(17, 0), open_until=time(20, 0)),
+                Field(id="f2", name="South", open_from=time(17, 0), open_until=time(20, 0))],
+        season_start=date(2026, 9, 7), season_end=date(2026, 9, 20), timezone=TZ,
+    )
+
+    def at(day: int, hour: int) -> datetime:
+        return datetime(2026, 9, day, hour, 0, tzinfo=tz)
+
+    events = [
+        ProposedEvent(team_id="t1", field_id="f1", event_type="practice", title="Mon", starts_at=at(7, 17), ends_at=at(7, 18)),
+        ProposedEvent(team_id="t1", field_id="f1", event_type="practice", title="Thu", starts_at=at(10, 17), ends_at=at(10, 18)),
+    ]
+    return problem, events, at
+
+
+def test_handle_exact_move_two_changes_questions_and_questions_round_trip() -> None:
+    problem, events, at = _edit_problem_and_calendar()
+
+    # Exact move: Thursday 17:00 North -> Friday 2026-09-11 18:00 North, exactly.
+    move_payload = _edit_payload([_edit_op(
+        "move", _edit_target(team_aliases=["T1"], date_from="2026-09-10", date_to="2026-09-10"),
+        _edit_to(date="2026-09-11", start_time="18:00", field_alias="F1", exactness="exact"),
+    )])
+
+    def move_chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            assert response_format["json_schema"]["name"] == "edit_plan"
+            return move_payload
+        return "Moved."
+
+    agent = ScheduleAgent(move_chat)
+    moved = agent.handle(problem, "Move the Thursday practice to Friday 6pm", events=events)
+    by_title = {e.title: e for e in moved.events}
+    assert (by_title["Mon"].starts_at, by_title["Mon"].field_id) == (at(7, 17), "f1")
+    assert (by_title["Thu"].starts_at, by_title["Thu"].field_id) == (at(11, 18), "f1")
+    assert "Moved:" in moved.summary and "Fri Sep 11 18:00" in moved.summary
+    assert all(c.passed for c in moved.check_results)
+    assert agent.approve(moved).approved is True
+    # No router call was made.
+    assert not any(s["step"] == "route" for s in agent.last_trace)
+
+    # Two changes in one request: cancel Thursday plus add a Saturday game.
+    two_payload = _edit_payload([
+        _edit_op("cancel", _edit_target(team_aliases=["T1"], date_from="2026-09-10", date_to="2026-09-10"), _edit_to()),
+        _edit_op("create_once", _edit_target(), _edit_to(date="2026-09-12", start_time="17:00", field_alias="F2", exactness="exact"),
+                 team_alias="T1", event_type="game", title="Sat game"),
+    ])
+
+    def two_chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            return two_payload
+        return "Done."
+
+    out = ScheduleAgent(two_chat).handle(problem, "Cancel Thursday and add a Saturday game", events=events)
+    titles = {e.title for e in out.events}
+    assert "Thu" not in titles and "Sat game" in titles and "Mon" in titles
+    assert all(c.passed for c in out.check_results)
+
+    # A question comes back instead of a guess, and approve refuses it.
+    def question_chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is not None:
+            return _edit_payload([], questions=["Which Thursday did you mean?"])
+        return "Question."
+
+    questioned = ScheduleAgent(question_chat).handle(problem, "Move it", events=events)
+    assert questioned.questions == ["Which Thursday did you mean?"]
+    assert sorted(questioned.events, key=lambda e: e.starts_at) == sorted(events, key=lambda e: e.starts_at)
+    with pytest.raises(AgentError):
+        ScheduleAgent(question_chat).approve(questioned)
+    assert Proposal.from_dict(json.loads(json.dumps(questioned.to_dict()))) == questioned
+    assert questioned.to_dict()["questions"] == ["Which Thursday did you mean?"]
 
 
 def test_plan_accepts_previous_rules_and_dict() -> None:

@@ -26,7 +26,9 @@ from .models import Problem, ProposedEvent
 
 @dataclass
 class CancelFilter:
-    """Which saved sessions to cancel: every set criterion must match.
+    """.. deprecated:: Kept for compatibility; new code uses ``cancel`` EditOps / SessionTarget.
+
+    Which saved sessions to cancel: every set criterion must match.
 
     Each list is an allow-list; an empty list (or None date bound)
     matches anything in that dimension. A filter with no criterion at

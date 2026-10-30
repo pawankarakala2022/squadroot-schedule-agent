@@ -42,7 +42,7 @@ from .apply_edits import build_edit_proposal
 from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "5.1.0"
+__version__ = "6.0.0"
 
 __all__ = [
     "__version__",

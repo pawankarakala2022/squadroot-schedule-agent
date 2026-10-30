@@ -180,38 +180,58 @@ def test_add_without_calendar_fails_safe() -> None:
         agent.add(_problem(), [], "Add a game next Sunday")
 
 
+def _edit_chat(calls=None):  # type: ignore[no-untyped-def]
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is None:
+            return "Explained."
+        name = response_format["json_schema"]["name"]
+        if calls is not None:
+            calls.append(name)
+        if name == "edit_plan":
+            return json.dumps({
+                "ops": [{
+                    "action": "create_once",
+                    "target": {"session_labels": [], "team_aliases": [], "field_aliases": [], "weekdays": [], "date_from": "", "date_to": "", "event_types": []},
+                    "to": {"date": "2026-09-10", "start_time": "", "field_alias": "", "weekdays": [3], "earliest_start": "17:00", "latest_end": "18:00", "exactness": "any"},
+                    "team_alias": "T1", "event_type": "game", "duration_minutes": 60, "sessions_per_week": 0, "title": "vs Falcons", "notes": [],
+                }],
+                "questions": [], "notes": [],
+            })
+        return GAME_RULES
+
+    return chat
+
+
 def test_handle_routes_add_and_freezes_calendar() -> None:
     existing = [_event("t1", "f1", 7), _event("t1", "f1", 14)]
-    agent = ScheduleAgent(_chat(route="add"))
+    agent = ScheduleAgent(_edit_chat())
     proposal = agent.handle(_problem(), "Add a game with Falcons on Thursday Sep 10", events=existing)
     assert len(proposal.events) == 3
     assert all(ev in proposal.events for ev in existing)
-    assert agent.last_trace[0]["step"] == "route"
+    assert agent.last_trace[0]["step"] == "edits"  # one edits call, no router
 
 
 def test_fast_route_skips_model_for_unambiguous_plan_and_add() -> None:
     calls: list[str] = []
 
-    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
-        if response_format is not None:
-            calls.append(response_format["json_schema"]["name"])
-            return GAME_RULES
-        calls.append("explain")
-        return "Explained."
+    chat = _edit_chat(calls)
 
-    planner = ScheduleAgent(chat)
+    def counting_chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is None:
+            calls.append("explain")
+        return chat(messages, response_format=response_format)
+
+    planner = ScheduleAgent(counting_chat)
     planner.handle(_problem(), "Foxes practice twice a week, 60 minutes, Mondays and Wednesdays after 5pm")
-    assert "route_intent" not in calls  # fast path, no 5-8s router call
-    assert planner.last_trace[0] == {
-        "step": "route", "call": "plan", "source": "fast_path", "latency_ms": 0,
-    }
+    assert "route_intent" not in calls  # no router call in the new design
+    assert planner.last_trace[0]["step"] == "understand"  # no calendar: straight to plan
 
     calls.clear()
-    adder = ScheduleAgent(chat)
+    adder = ScheduleAgent(counting_chat)
     adder.handle(
         _problem(), "Add a game with Falcons on Thursday Sep 10", events=[_event("t1", "f1", 7)]
     )
-    assert "route_intent" not in calls
+    assert "route_intent" not in calls and "edit_plan" in calls
 
 
 def test_deterministic_summary_skips_explain_model_call() -> None:

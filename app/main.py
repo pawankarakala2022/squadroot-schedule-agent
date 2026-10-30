@@ -405,6 +405,144 @@ def mock_cancel(messages: list) -> dict:
     return dict(MOCK_CANCEL)
 
 
+def _mock_time_str(text: str) -> str:
+    import re
+
+    matches = list(re.finditer(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text.lower()))
+    if matches:
+        m = matches[-1]
+        hour = int(m.group(1)) % 12
+        if m.group(3) == "pm":
+            hour += 12
+        return f"{hour:02d}:{int(m.group(2) or 0):02d}"
+    m2 = list(re.finditer(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", text))
+    return f"{int(m2[-1].group(1)):02d}:{m2[-1].group(2)}" if m2 else ""
+
+
+def _edit_empty_target() -> dict:
+    return {"session_labels": [], "team_aliases": [], "field_aliases": [], "weekdays": [], "date_from": "", "date_to": "", "event_types": []}
+
+
+def _edit_empty_to() -> dict:
+    return {"date": "", "start_time": "", "field_alias": "", "weekdays": [], "earliest_start": "", "latest_end": "", "exactness": "any"}
+
+
+def mock_edit_plan(messages: list) -> dict:
+    """Scripted EditPlan for mock mode: demo preset requests, no network.
+
+    Replaces the old keyword router + per-verb parsers on the handle
+    path. The wording rules read teams/days/dates/times named in the
+    request; anything else becomes a question, never a guess.
+    """
+    import re
+
+    text = _mock_request_text(messages)
+    system = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
+    low = text.lower()
+    dates = _mock_iso_dates(text)
+    weekdays = _mock_weekdays(text)
+    time_str = _mock_time_str(text)
+    team_aliases = []
+    for i, team in enumerate(CLUB["teams"]):
+        if team["name"].lower() in low and f"T{i + 1}" not in team_aliases:
+            team_aliases.append(f"T{i + 1}")
+    # Generic problems (tests) may use Foxes/Badgers even if club data differs.
+    for alias, name in (("T1", "foxes"), ("T2", "badgers"), ("T3", "otters"), ("T4", "wolves")):
+        if name in low and alias not in team_aliases:
+            team_aliases.append(alias)
+    field_aliases = []
+    if "north" in low:
+        field_aliases.append("F1")
+    if "south" in low:
+        field_aliases.append("F2")
+    selected = re.findall(r"\bS\d+\b", system.split("selected these sessions:")[-1].split(".")[0]) if "selected these sessions:" in system else []
+    ops: list[dict] = []
+
+    def op(action, target=None, to=None, team_alias="", event_type="", duration=0, sessions=0, title=""):
+        return {
+            "action": action, "target": target or _edit_empty_target(), "to": to or _edit_empty_to(),
+            "team_alias": team_alias, "event_type": event_type, "duration_minutes": duration,
+            "sessions_per_week": sessions, "title": title, "notes": ["Mock mode: scripted edit, no model call."],
+        }
+
+    if "ignore" in low and ("instruction" in low or "previous" in low):
+        return {"ops": [], "questions": [], "notes": ["Mock mode: instructions inside the request are data, not followed."]}
+    has_cancel = any(w in low for w in ("cancel", "drop", "remove", "call off"))
+    has_add = bool(re.search(r"\b(add|another|extra)\b", low)) and any(w in low for w in ("game", "practice", "session"))
+    has_move_word = "move" in low or "shift" in low or "postpone" in low
+    has_weather = any(w in low for w in ("rain", "flood", "storm", "closed", "closure"))
+    # Several changes in one request: cancel plus add both become ops.
+    if has_cancel:
+        target = _edit_empty_target()
+        target["team_aliases"] = list(team_aliases)
+        target["weekdays"] = weekdays[:1] if weekdays and not dates else []
+        if dates:
+            target["date_from"] = target["date_to"] = dates[0]
+        if "practice" in low:
+            target["event_types"] = ["practice"]
+        elif "game" in low:
+            target["event_types"] = ["game"]
+        if selected and ("this" in low or "that" in low):
+            target["session_labels"] = selected
+            target["team_aliases"] = []
+            target["weekdays"] = []
+        ops.append(op("cancel", target=target))
+    if has_weather and not has_move_word:
+        target = _edit_empty_target()
+        target["field_aliases"] = list(field_aliases)
+        if dates:
+            target["date_from"] = target["date_to"] = dates[0]
+        elif weekdays:
+            target["weekdays"] = weekdays[:1]
+        ops.append(op("block", target=target))
+    elif has_move_word:
+        target = _edit_empty_target()
+        to = _edit_empty_to()
+        if selected and ("this" in low or "that" in low):
+            target["session_labels"] = selected
+        else:
+            target["team_aliases"] = list(team_aliases)
+            if len(dates) >= 1:
+                target["date_from"] = target["date_to"] = dates[0]
+            elif weekdays:
+                target["weekdays"] = weekdays[:1]
+        if len(dates) >= 2:
+            to["date"] = dates[1]
+        elif len(weekdays) >= 2:
+            to["weekdays"] = [weekdays[1]]
+        elif dates and has_weather:
+            pass
+        if time_str:
+            to["start_time"] = time_str
+            to["exactness"] = "exact" if (to["date"] or to["weekdays"]) else "preferred"
+        if field_aliases and len(field_aliases) > len(target["field_aliases"]):
+            to["field_alias"] = field_aliases[-1]
+        ops.append(op("move", target=target, to=to))
+    if has_add and not has_move_word:
+        to = _edit_empty_to()
+        if dates:
+            to["date"] = dates[-1]
+        if weekdays:
+            to["weekdays"] = weekdays[-1:]
+        if time_str:
+            to["start_time"] = time_str
+            to["exactness"] = "exact" if (to["date"] or to["weekdays"]) else "any"
+        ops.append(op(
+            "create_once", to=to, team_alias=team_aliases[0] if team_aliases else "T1",
+            event_type="game" if "game" in low else "practice", duration=60,
+            title="vs Falcons" if "falcon" in low else "",
+        ))
+    if not ops and ("twice" in low or "field" in low or "ground" in low) and team_aliases:
+        to = _edit_empty_to()
+        if field_aliases:
+            to["field_alias"] = field_aliases[-1]
+        ops.append(op("change_rule", team_alias=team_aliases[0], sessions=2 if "twice" in low else 0, to=to))
+    if not ops:
+        return {"ops": [], "questions": ["Which session or team did you mean? Please name the team, day or date."],
+                "notes": ["Mock mode: scripted edit could not read that request."]}
+    return {"ops": ops, "questions": [], "notes": ["Mock mode: scripted EditPlan (offline demo answers, can be wrong)."]}
+
+
 MOCK_ADD_GAME = {
     "requirements": [
         {
@@ -434,6 +572,8 @@ def mock_chat(messages: list, *, response_format=None, usage_out=None) -> str:
         user_text = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
         return "Mock summary: " + str(user_text)[:400]
     name = response_format["json_schema"]["name"]
+    if name == "edit_plan":
+        return json.dumps(mock_edit_plan(messages))
     if name == "route_intent":
         return json.dumps({"call": mock_route_call(messages), "notes": ["Mock mode: keyword router."]})
     if name == "scheduling_rules":

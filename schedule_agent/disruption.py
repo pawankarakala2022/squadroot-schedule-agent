@@ -28,7 +28,9 @@ DEFAULT_SEARCH_DAYS = 7
 
 @dataclass
 class Disruption:
-    """What closed and when: re-place events on ``field_ids`` between
+    """.. deprecated:: Kept for compatibility; new code uses ``block`` EditOps.
+
+    What closed and when: re-place events on ``field_ids`` between
     ``date_from`` and ``date_to`` (inclusive) onto fields that stay open.
 
     An empty ``field_ids`` means every field is closed. ``search_days``

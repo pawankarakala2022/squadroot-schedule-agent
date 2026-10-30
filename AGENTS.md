@@ -55,10 +55,11 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
      `Busy(resource, start, end, reason="already booked")` where `resource` is `"team:<id>"` or
      `"field:<id>"`, `Problem(teams, fields, season_start, season_end, timezone, busy=[], blackout_dates=[])`,
      `Rules`, `Requirement`, `ProposedEvent(team_id, field_id, event_type, title, starts_at, ends_at)`,
-     `CheckResult`, `Shortfall`, `Proposal`, `ApplyResult`,
+     `CheckResult`, `Shortfall`, `Proposal` (with `questions=[]`, in to_dict/from_dict; approve refuses open questions), `ApplyResult`,
      `Disruption(date_from, date_to, field_ids=[] meaning all, search_days=7,
      not_before=None, notes=[])`, `CancelFilter(team_ids=[], field_ids=[],
-     weekdays=[], date_from=None, date_to=None, event_types=[], notes=[])`.
+     weekdays=[], date_from=None, date_to=None, event_types=[], notes=[])` (both deprecated, kept working).
+   - Edits (v6.0.0): `SessionTarget(session_ids=[], team_ids=[], field_ids=[], weekdays=[], date_from=None, date_to=None, event_types=[])` (every set field must match; empty rejected, never match-all), `Placement(date=None, start_time=None, field_id=None, weekdays=[], earliest_start=None, latest_end=None, exactness="any")` (`exact`|`preferred`|`any`), `EditOp(action, target=None, to=None, team_id=None, event_type=None, duration_minutes=None, sessions_per_week=None, title=None, notes=[])` (create_once/create_recurring/move/cancel/block/change_rule; `block` becomes Busy, never names a person), `EditPlan(ops=[], questions=[], notes=[])`, `parse_edits(problem, request, chat, *, events=None, draft=None, selected_session_ids=None, language="en") -> EditPlan` (strict `edit_plan` schema, S/T/F aliases, drop-and-report + clamp, one repair retry, code-added questions), `build_edit_proposal(problem, current_events, edit_plan, *, verify=None) -> Proposal` (diff with frozen untargeted sessions, exact-or-shortfall with nearest slots, combined checks + verify).
    - Agent: `ScheduleAgent(chat, *, explain_chat=None, deterministic_summary=False)`
      (deterministic_summary renders English summaries in code, no explain model call),
      `agent.plan(problem, request, *, previous=None, verify=None, games=None) -> Proposal` (uploaded `games` enter as fixed checked game events and block practice time; `revise` and `handle` accept the same `games=`),
@@ -80,16 +81,16 @@ The demo app in `app/` must use exactly the same public interface, so the demo p
      only matched sessions, kept sessions stay exactly where they are, the summary
      lists each cancellation; a request matching nothing fails safely),
      `agent.handle(problem, request, *, proposal=None, events=None, previous=None,
-     verify=None, not_before=None, allowed_fields=None) -> Proposal` (one entry
-     point: the router routes any wording to plan/revise/reschedule/cancel/add via
-     `parse_route_intent`, code dispatches; cancel/reschedule with no calendar fail
-     safely, revise with no draft falls back to plan, add with no calendar falls
-     back to plan and add against a draft extends the draft's sessions).
+     verify=None, not_before=None, allowed_fields=None, selected_session_ids=None) -> Proposal` (one entry
+     point, no router: with no calendar and no draft it calls `plan()`; otherwise one
+     `parse_edits` call -> `build_edit_proposal` diff; questions return in
+     `Proposal.questions` and block approval; wrappers `revise`/`reschedule`/`cancel`/`add`
+     keep their contracts as thin wrappers that build the change list).
    - Model: `ModelConfig.from_env() -> ModelConfig | None` (None when no key), `chat_fn(config, *, temperature=0.0)`.
    - Voice: `VoiceConfig.from_env() -> VoiceConfig | None`, `transcribe_audio(config, audio_bytes, *, filename=..., mime_type=None, language=None) -> str`.
    - Vision: `GameImport` (`matched` = every name matched exactly; `blocks_time` = readable date/time plus at least one matched team/field), `ScheduleImport` (`matched_games()`, `blocking_games()`), `extract_games(problem, image_bytes, chat, *, mime_type="image/png") -> ScheduleImport`, `games_to_busy(schedule, problem, *, duration_minutes=60) -> list[Busy]` (busy for exactly-matched parts only: an external league opponent is never guessed, but our team and field still block), `games_to_events(schedule, problem, *, duration_minutes=60) -> list[ProposedEvent]` (one fixed game event per game with a known team and field, titled with both printed names).
   - Notify: `FamilyNotice`, `FamilyNotices`, `draft_notices(problem, events, chat, *, languages=[...]) -> FamilyNotices` (one drafted notice per family language; every draft must echo each team name, date, time and field name exactly, one repair retry, gaps reported not silently sent).
-  - Router: `Route`, `parse_route_intent(request, chat, *, has_proposal=False, has_events=False) -> Route` (picks one of plan/revise/reschedule/cancel/add; strict json_schema, one repair retry, then fail safely. Conservative English fast path: unambiguous fresh practice/game requests and explicit "add a game/practice" against a calendar route in code with no model call; all other wording goes to the model).
+  - Router (deprecated): `Route`, `parse_route_intent(request, chat, *, has_proposal=False, has_events=False) -> Route` (kept exported and working for compatibility, marked deprecated; `handle` no longer calls it).
   - Dynamic layer (v4.2.0): `today_in_tz(problem)`, `relative_date_hints(today)`, `problem_date_hints(problem)` (code-resolved "next Tue/week/month" copied by the model in any language); `us_federal_holidays(year)`, `holiday_dates(start, end)`, `with_us_holidays(problem)` (US general holidays merged as blackouts by the host); `AvailabilityParse`, `parse_availability(problem, request, chat) -> AvailabilityParse` (coach unavailability text/transcript -> `Busy`, never availability, no coach entity); `GroundAvailability`, `CoachUnavailability`, `AvailabilityImport`, `extract_availability(problem, image_bytes, chat) -> AvailabilityImport`, `availability_to_busy(import, problem) -> list[Busy]` (grounds/coach photo or screenshot, exact matching). Agent methods accept `language="en"`; team/field names stay in English, never translated. Rain with no named move target routes to cancel; `reschedule` needs a named new date/field.
    - Errors: `AgentError` (bad request / could not understand, safe to show the manager),
      `ModelError` (provider failure, safe to show as "assistant unavailable").
@@ -134,6 +135,9 @@ schedule_agent/
   holidays.py     US federal holidays -> blackout dates (host opt-in)
   availability.py coach unavailability text/transcript -> Busy
   notify.py       family notice drafts per language
+  edits.py        request -> EditPlan (one model call, S/T/F aliases, validation)
+  edit_examples.py worked-examples bank (few-shot selection, no embeddings)
+  apply_edits.py  EditPlan -> checked Proposal diff (frozen sessions, exact-or-shortfall)
   agent.py        the loop: understand -> solve -> check -> repair -> explain -> await approval
 app/              FastAPI demo + static/index.html
 demo/             fictional club data, sample voice note, sample schedule image

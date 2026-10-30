@@ -1,5 +1,26 @@
 # Changelog
 
+## v6.0.0 (2026-10-29)
+
+Breaking (request routing and Proposal shape): one model call now
+turns any request against a calendar or draft into a list of changes,
+applied in code as a diff. New public names `SessionTarget`,
+`Placement`, `EditOp`, `EditPlan`, `parse_edits` and
+`build_edit_proposal` (`schedule_agent/edits.py` /
+`apply_edits.py`, with a worked-examples bank in `edit_examples.py`).
+`Proposal` gains `questions: list[str]` (in `to_dict`/`from_dict`;
+old dicts without it still parse) and `approve()` refuses drafts
+with open questions. `ScheduleAgent.handle` no longer routes: with
+no calendar and no draft it calls `plan()`, otherwise it runs
+`parse_edits` -> `build_edit_proposal` (new optional keyword
+`selected_session_ids=None`). Exact placements are placed exactly
+or become shortfalls with up to 3 nearest valid slots; several
+changes in one request all apply; untargeted sessions never move.
+`reschedule` / `cancel` / `add` / `revise` keep their signatures
+and behaviour contracts as thin wrappers that build the change
+list. `Route` / `parse_route_intent`, `Disruption` and
+`CancelFilter` stay exported and working, marked deprecated.
+
 ## v5.1.0 (2026-10-29)
 
 Additive, backward compatible (new optional keyword, new helper):

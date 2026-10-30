@@ -126,12 +126,38 @@ def _combined_chat(route_call: str):  # type: ignore[no-untyped-def]
     return chat
 
 
+def _edit_target(**over):  # type: ignore[no-untyped-def]
+    base = {"session_labels": [], "team_aliases": [], "field_aliases": [], "weekdays": [], "date_from": "", "date_to": "", "event_types": []}
+    base.update(over)
+    return base
+
+
+def _edit_to(**over):  # type: ignore[no-untyped-def]
+    base = {"date": "", "start_time": "", "field_alias": "", "weekdays": [], "earliest_start": "", "latest_end": "", "exactness": "any"}
+    base.update(over)
+    return base
+
+
+def _edit_chat(edit_payload):  # type: ignore[no-untyped-def]
+    def chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
+        if response_format is None:
+            return "summary"
+        name = response_format["json_schema"]["name"]
+        if name == "edit_plan":
+            return json.dumps(edit_payload)
+        if name == "scheduling_rules":
+            return RULES_JSON
+        return "summary"
+
+    return chat
+
+
 def test_handle_plans_from_scratch() -> None:
     agent = ScheduleAgent(_combined_chat("plan"))
     proposal = agent.handle(_problem(), "Badgers practice Thursdays after 5pm")
     assert isinstance(proposal, Proposal) and proposal.events
     assert all(e.team_id == "t2" for e in proposal.events)
-    assert agent.last_trace and agent.last_trace[0]["step"] == "route"
+    assert agent.last_trace and agent.last_trace[0]["step"] == "understand"  # no calendar: plan, no router
 
 
 def test_handle_moves_dated_session() -> None:
@@ -139,28 +165,39 @@ def test_handle_moves_dated_session() -> None:
     planned = agent.handle(_problem(), "Badgers practice Thursdays after 5pm")
     assert any(e.starts_at.date() == date(2026, 10, 29) for e in planned.events)
 
-    mover = ScheduleAgent(_combined_chat("reschedule"))
+    payload = {"ops": [{
+        "action": "move", "target": _edit_target(team_aliases=["T2"], date_from="2026-10-29", date_to="2026-10-29"),
+        "to": _edit_to(date="2026-10-30", start_time="17:00", exactness="exact"),
+        "team_alias": "", "event_type": "", "duration_minutes": 0, "sessions_per_week": 0, "title": "", "notes": [],
+    }], "questions": [], "notes": []}
+    mover = ScheduleAgent(_edit_chat(payload))
     moved = mover.handle(_problem(), "Move thu practice from 10/29 to friday 10/30",
                          events=planned.events)
     days = sorted(e.starts_at.date() for e in moved.events)
     assert date(2026, 10, 29) not in days  # hit session left Thursday...
     assert date(2026, 10, 30) in days  # ...and landed Friday
     assert all(c.passed for c in moved.check_results)
+    assert not any(s.get("step") in ("route",) for s in mover.last_trace)
 
 
 def test_handle_cancels_named_team() -> None:
     agent = ScheduleAgent(_combined_chat("plan"))
     planned = agent.handle(_problem(), "Badgers practice Thursdays after 5pm")
-    canceller = ScheduleAgent(_combined_chat("cancel"))
+    payload = {"ops": [{
+        "action": "cancel", "target": _edit_target(team_aliases=["T2"]),
+        "to": _edit_to(), "team_alias": "", "event_type": "", "duration_minutes": 0, "sessions_per_week": 0, "title": "", "notes": [],
+    }], "questions": [], "notes": []}
+    canceller = ScheduleAgent(_edit_chat(payload))
     out = canceller.handle(_problem(), "Cancel Badgers practices", events=planned.events)
     assert len(out.events) == 0
     assert "Cancelled" in out.summary
 
 
-def test_handle_cancel_without_calendar_fails_safe() -> None:
-    agent = ScheduleAgent(_combined_chat("cancel"))
-    with pytest.raises(AgentError, match="no calendar yet"):
-        agent.handle(_problem(), "Cancel Badgers practices")
+def test_handle_cancel_without_calendar_falls_back_to_plan() -> None:
+    # New design: no calendar and no draft always plans (no router guess).
+    agent = ScheduleAgent(_combined_chat("plan"))
+    proposal = agent.handle(_problem(), "Cancel Badgers practices")
+    assert isinstance(proposal, Proposal) and proposal.events
 
 
 def test_handle_revise_without_draft_falls_back_to_plan() -> None:
