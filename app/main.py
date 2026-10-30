@@ -1239,12 +1239,12 @@ def voice_result(mode: str, data: bytes, filename: str, mime_type: str | None) -
     config = VoiceConfig.from_env()
     if config is None:
         raise HTTPException(400, "Voice needs MODEL_API_KEY in .env (or use Mock mode).")
-    from schedule_agent import ModelError
+    from schedule_agent import AgentError, ModelError
 
     usage: dict = {}
     try:
         text = transcribe_audio(config, data, filename=filename, mime_type=mime_type, usage_out=usage)
-    except ModelError as exc:
+    except (AgentError, ModelError) as exc:
         raise HTTPException(400, str(exc)) from exc
     # Team/field names stay in English even when the note was in Spanish.
     text = _english_club_names(text)

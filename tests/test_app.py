@@ -342,6 +342,8 @@ def test_frontend_shows_current_diff_and_simple_primary() -> None:
     # One prompt: typing, recording and files all land in the same box.
     assert 'id="ingest-files"' in html and 'id="ingest-btn"' in html and "Read file(s) into this box" in html
     assert 'id="record-btn"' in html and "Speak" in html and "One box: type, speak, or attach" in html
+    # Speak records 16 kHz mono WAV (the format the endpoint takes), never WebM.
+    assert "voice-note.wav" in html and "toWav16k" in html and "MediaRecorder" not in html
     assert "can be wrong" in html and "modes.meta" in html  # real mode preferred, mock warned
     assert "Mock has pre-defined questions and answers" in html and 'id="mock-note"' in html
     assert "Muse Spark via Baseten" in html and "hosted via Baseten" in html
@@ -379,6 +381,23 @@ def test_mock_voice_and_vision() -> None:
 
     planned = api_plan({"mode": "mock", "request": PRESETS["plan_request"], "games": vision["schedule"]})
     assert all(c["passed"] for c in planned["proposal"]["check_results"])
+
+
+def test_voice_bad_recording_is_400_not_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A recording the transcriber rejects up front is a readable 400."""
+    from schedule_agent import AgentError
+
+    monkeypatch.setattr(app_main, "_load_dotenv", lambda: None)  # isolate from a real .env
+    monkeypatch.setenv("MODEL_API_KEY", "k")
+
+    def reject(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AgentError("That WAV recording won't transcribe (stereo); please send mono audio.")
+
+    monkeypatch.setattr(app_main, "transcribe_audio", reject)
+    with pytest.raises(HTTPException) as caught:
+        voice_result("meta", b"RIFFfake", "note.wav", "audio/wav")
+    assert caught.value.status_code == 400
+    assert "mono" in str(caught.value.detail)
 
 
 def test_errors_are_readable(monkeypatch: pytest.MonkeyPatch) -> None:

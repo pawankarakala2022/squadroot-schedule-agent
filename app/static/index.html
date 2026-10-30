@@ -436,7 +436,7 @@ async function init() {
   $("minimize-proposed").addEventListener("click", () => setWeeks($("calendar"), false));
   $("approve-btn").addEventListener("click", approve); $("notices-btn").addEventListener("click", notices);
   $("ingest-btn").addEventListener("click", readFiles);
-  $("record-btn").addEventListener("click", startRecording); $("record-stop").addEventListener("click", () => { if (recorder && recorder.state !== "inactive") recorder.stop(); });
+  $("record-btn").addEventListener("click", startRecording); $("record-stop").addEventListener("click", stopRecording);
   syncButtons();
 }
 init().catch((e) => fail(e.message));
