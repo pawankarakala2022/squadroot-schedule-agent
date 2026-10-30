@@ -7,7 +7,9 @@ and become shortfalls (with nearest valid alternatives) rather than
 landing silently elsewhere -- so the model still never picks a time.
 Everything else is placed by the deterministic solver, then the whole
 combined calendar goes through the named checks and the host verify
-hook (at most 3 rounds, as in plan).
+hook (at most 3 rounds, as in plan). Uploaded league games join as
+fixed game events first: saved sessions they clash with are moved,
+everything else is placed around them.
 """
 
 from __future__ import annotations
@@ -20,8 +22,9 @@ from .checks import run_checks
 from .dates import today_in_tz
 from .edits import EditOp, EditPlan, Placement, SessionTarget, resolve_target, session_key
 from .errors import AgentError
-from .models import Busy, Field, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
+from .models import Busy, CheckResult, Field, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
 from .solver import solve
+from .vision import ScheduleImport, games_to_busy, games_to_events
 
 MAX_VERIFY_ROUNDS = 3
 GROUND_AVAILABILITY_NOTE = (
@@ -67,6 +70,25 @@ def _fmt_event(problem: Problem, ev: ProposedEvent) -> str:
         f"{team} {ev.event_type} {_DAY_ABBR[local.weekday()]} {_MONTH_ABBR[local.month - 1]} "
         f"{local.day} {local.strftime('%H:%M')} {field_name}"
     )
+
+
+def league_fixture_hours(results: list[CheckResult], events: list[ProposedEvent], fixed_keys: set[str]) -> list[CheckResult]:
+    """Ground hours do not apply to fixed league games: the league sets their time.
+
+    The club's ground hours bound what the club books; a fixture the
+    league printed at 9am is a fact, not a placement, so a failed
+    ``field_hours`` check on one becomes a recorded pass that says why.
+    Every other check (double booking, team overlap, blackout, busy)
+    still applies to the game and to everything around it.
+    """
+    out: list[CheckResult] = []
+    for r in results:
+        if (not r.passed and r.check == "field_hours" and 0 <= r.event_index < len(events)
+                and session_key(events[r.event_index]) in fixed_keys):
+            r = CheckResult(check=r.check, event_index=r.event_index, passed=True,
+                            reason="League fixture: time set by the league. " + r.reason)
+        out.append(r)
+    return out
 
 
 def _monday_of(day: date) -> date:
@@ -142,6 +164,7 @@ class _Builder:
         self, problem: Problem, current: list[ProposedEvent], plan: EditPlan, extra_busy: list[Busy],
         *, draft: Any = None, ground_unchecked: bool = False, move_not_before: date | None = None,
         allowed_fields: list[str] | None = None, search_days: int = 7, extra_notes: list[str] | None = None,
+        games: ScheduleImport | None = None,
     ) -> None:
         self.problem = problem
         self.current = list(current)
@@ -168,10 +191,16 @@ class _Builder:
         base_rules = _draft_rules(draft)
         self.updated_rules: Rules | None = _copy_rules(base_rules) if base_rules is not None else None
         self._handled: set[str] = set()
+        # Fixed league games: never solved or moved; re-uploads of saved games add nothing.
+        all_games = games_to_events(games, problem) if games is not None else []
+        saved = {session_key(e) for e in current}
+        self.game_events = [e for e in all_games if session_key(e) not in saved]
+        self.game_busy = games_to_busy(games, problem) if games is not None else []
+        self.game_keys = {session_key(e) for e in all_games}
 
     # -- busy / problems -------------------------------------------------
     def _base_busy(self) -> list[Busy]:
-        busy = list(self.problem.busy) + list(self.extra_busy) + list(self.block_busy)
+        busy = list(self.problem.busy) + list(self.extra_busy) + list(self.block_busy) + list(self.game_busy)
         if self.ground_unchecked:
             busy = [b for b in busy if not b.resource.startswith("field:")]
         return busy
@@ -591,13 +620,17 @@ class _Builder:
             # Only narrow when the target was meant as a session selector, not a field closure.
             if target.team_ids or target.event_types:
                 hit = narrowed if narrowed or target.event_types else hit
+        self._move_hit(hit, list(to.weekdays) if to else [])
+
+    def _move_hit(self, hit: list[ProposedEvent], weekdays: list[int]) -> None:
+        """Re-place each hit kept session with the solver (any time), in start order."""
         for original in sorted(hit, key=lambda e: (e.starts_at, e.team_id, e.field_id)):
             if session_key(original) in self._handled:
                 continue
             self._remove_kept(original)
             move_op = EditOp(
                 action="move", target=None,
-                to=Placement(weekdays=list(to.weekdays) if to else [], field_id=None,
+                to=Placement(weekdays=list(weekdays), field_id=None,
                              earliest_start=None, latest_end=None, exactness="any"),
                 team_id=original.team_id, event_type=original.event_type,
                 duration_minutes=int((original.ends_at - original.starts_at).total_seconds() // 60),
@@ -607,6 +640,23 @@ class _Builder:
             if placed is not None:
                 self.added.append(placed)
                 self.moved.append((original, placed))
+
+    def _add_games(self) -> None:
+        """Add the fixed games, then move every saved session a game blocks."""
+        self.added.extend(self.game_events)
+        hit: list[ProposedEvent] = []
+        for ev in list(self.kept):
+            if session_key(ev) in self.game_keys:
+                continue
+            for busy in self.game_busy:
+                kind, _, rid = busy.resource.partition(":")
+                same = (kind == "team" and rid == ev.team_id) or (
+                    kind == "field" and rid == ev.field_id and not self.ground_unchecked
+                )
+                if same and ev.starts_at < busy.end and busy.start < ev.ends_at:
+                    hit.append(ev)
+                    break
+        self._move_hit(hit, [])
 
     def _do_change_rule(self, op: EditOp) -> None:
         team_id = op.team_id or (op.target.team_ids[0] if op.target and len(op.target.team_ids) == 1 else None)
@@ -687,6 +737,8 @@ class _Builder:
 
     # -- main ----------------------------------------------------------------
     def build(self) -> Proposal:
+        if self.game_events or self.game_busy:
+            self._add_games()
         for op in self.plan.ops:
             if op.action == "cancel":
                 self._do_cancel(op)
@@ -713,21 +765,30 @@ class _Builder:
             rules.notes = list(dict.fromkeys(notes + list(rules.notes))) if False else notes + [n for n in rules.notes if n not in notes]
         else:
             rules = Rules(requirements=list(self.derived_requirements), min_gap_days=0, notes=notes)
-        checking_problem = _rebuild(self.problem, self._base_busy())
+        # Games are checked as events (a clash shows as a double booking),
+        # not against their own busy, or a game would fail against itself.
+        checking_busy = [b for b in self._base_busy() if b not in self.game_busy]
+        checking_problem = _rebuild(self.problem, checking_busy)
         if self.ground_unchecked:
-            checking_problem = _ground_unchecked(self.problem, [b for b in self._base_busy() if not b.resource.startswith("field:")])
+            checking_problem = _ground_unchecked(self.problem, [b for b in checking_busy if not b.resource.startswith("field:")])
         check_rules = Rules(
             requirements=rules.requirements,
             min_gap_days=rules.min_gap_days if self.updated_rules is not None and any(o.action == "change_rule" for o in self.plan.ops) else 0,
             blackout_dates=rules.blackout_dates, notes=rules.notes,
         )
-        results = run_checks(checking_problem, check_rules, events)
+        results = league_fixture_hours(run_checks(checking_problem, check_rules, events), events, self.game_keys)
         summary = self._summary(events)
         return Proposal(rules=rules, events=events, check_results=results, shortfalls=self.shortfalls, summary=summary, questions=list(self.questions))
 
     def _summary(self, events: list[ProposedEvent]) -> str:
         lines: list[str] = []
         has_block = any(o.action == "block" for o in self.plan.ops)
+        if self.game_events:
+            lines.append(f"Added {len(self.game_events)} league game(s) as fixed events:")
+            for ev in self.game_events:
+                lines.append(f"- Game: {_fmt_event(self.problem, ev)} ({ev.starts_at.isoformat()})")
+            if not self.moved:
+                lines.append("No saved sessions clashed with the games.")
         if has_block and not self.moved:
             lines.append("No sessions needed moving.")
         if self.cancelled:
@@ -777,6 +838,7 @@ def build_edit_proposal(
     allowed_fields: list[str] | None = None,
     search_days: int = 7,
     extra_notes: list[str] | None = None,
+    games: ScheduleImport | None = None,
     **_kw: Any,
 ) -> Proposal:
     """Apply ``edit_plan`` to ``current_events`` as a checked diff.
@@ -787,7 +849,9 @@ def build_edit_proposal(
     sessions stay exactly where they are, blocks re-place only the
     sessions they hit, exact placements are checked (shortfall with
     nearest alternatives on conflict), and the combined calendar is
-    checked and verified (at most 3 rounds).
+    checked and verified (at most 3 rounds). Uploaded ``games`` are
+    added as fixed game events before the ops run, and saved sessions
+    they clash with are moved.
     """
     if isinstance(edit_plan, dict):
         edit_plan = EditPlan.from_dict(edit_plan)
@@ -815,7 +879,7 @@ def build_edit_proposal(
         builder = _Builder(
             problem, current, edit_plan, extra, draft=draft, ground_unchecked=ground_unchecked,
             move_not_before=move_not_before, allowed_fields=allowed_fields, search_days=search_days,
-            extra_notes=extra_notes,
+            extra_notes=extra_notes, games=games,
         )
         proposal = builder.build()
         if verify is None:

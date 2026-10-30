@@ -30,8 +30,8 @@ from .llm import ChatFn
 from .models import ApplyResult, Busy, Field, Problem, Proposal, ProposedEvent, Requirement, Rules, Shortfall
 from .solver import solve
 from .understand import understand_request
-from .apply_edits import build_edit_proposal
-from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits
+from .apply_edits import build_edit_proposal, league_fixture_hours
+from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits, session_key
 from .ingest import IngestedRequest
 from .vision import ScheduleImport, games_to_busy, games_to_events
 
@@ -729,11 +729,18 @@ class ScheduleAgent:
                     pin_notes.append(f"Unknown grounds {sorted(dropped_fields)} dropped.")
                 if not pin_fields:
                     pin_fields = None
-        edit_plan = parse_edits(
-            problem, request if isinstance(request, str) else "",
-            self._traced(self._chat, "edits", self._chat_usage),
-            events=calendar, draft=draft, selected_session_ids=selected_session_ids, language=language,
-        )
+        coerced_games = _coerce_games(games)
+        has_games = coerced_games is not None and bool(coerced_games.games)
+        text = request if isinstance(request, str) else ""
+        if has_games and not text.strip():
+            # Files alone: the games are the whole change; no words for the model to read.
+            edit_plan = EditPlan()
+        else:
+            edit_plan = parse_edits(
+                problem, text,
+                self._traced(self._chat, "edits", self._chat_usage),
+                events=calendar, draft=draft, selected_session_ids=selected_session_ids, language=language,
+            )
         self.last_trace.append(
             {"step": "edit_plan", "ops": len(edit_plan.ops), "questions": len(edit_plan.questions), "notes": len(edit_plan.notes),
              "ops_detail": edit_plan.to_dict()["ops"]}
@@ -741,6 +748,7 @@ class ScheduleAgent:
         out = build_edit_proposal(
             problem, calendar, edit_plan, verify=verify, draft=draft,
             move_not_before=host_before, allowed_fields=pin_fields, extra_notes=pin_notes,
+            games=coerced_games if has_games else None,
         )
         self.last_trace.append({"step": "checks", "round": 0, "results": len(out.check_results), "failed": sum(1 for c in out.check_results if not c.passed), "latency_ms": 0})
         if out.questions:
@@ -1329,7 +1337,9 @@ class ScheduleAgent:
                 else rules
             )
             started = time.monotonic()
-            results = run_checks(checking, checking_rules, combined)
+            results = league_fixture_hours(
+                run_checks(checking, checking_rules, combined), combined, {session_key(e) for e in game_events}
+            )
             failed = sum(1 for c in results if not c.passed)
             self.last_trace.append(
                 {

@@ -393,8 +393,15 @@ async function stopRecording() {
 }
 async function readFiles() {
   clearFail();
+  const btn = $("ingest-btn"), out = $("ingest-result");
+  if (btn.disabled) return;
+  const list = Array.from($("ingest-files").files || []);
+  if (!list.length) { out.innerHTML = "<p class=\"hint\">Choose at least one file first (the box left of this button), then press it again.</p>"; return; }
+  // Live modes make model calls per file; show progress so the click is never silent.
+  btn.disabled = true; const label = btn.textContent; btn.textContent = "Reading…";
+  out.innerHTML = "<p role=\"status\"><span class=\"spinner\" aria-hidden=\"true\" style=\"display:inline-block;vertical-align:middle\"></span> Reading " + list.length + " file(s)… " +
+    (S.mode === "mock" ? "" : "the assistant reads each table or photo, this can take up to a minute.") + "</p>";
   try {
-    const list = Array.from($("ingest-files").files || []); if (!list.length) throw new Error("Choose at least one file first.");
     const fd = new FormData(); fd.append("mode", S.mode); fd.append("text", $("request").value);
     list.forEach((f) => fd.append("files", f));
     const r = await fetch("/api/ingest", { method: "POST", body: fd }); const j = await r.json().catch(() => ({}));
@@ -402,11 +409,13 @@ async function readFiles() {
     S.ingested = j.ingested; S.extraBusy = j.busy || [];
     if (j.ingested.text) $("request").value = j.ingested.text;
     const g = j.ingested.games.games.length, gr = j.ingested.availability.grounds.length, c = j.ingested.availability.coach.length;
-    $("ingest-result").innerHTML = "<p><strong>Read " + list.length + " file(s):</strong> " + g + " game(s), " + gr + " ground row(s), " + c + " coach window(s) · " + j.busy_count + " blocked times will apply.</p>" +
+    out.innerHTML = "<p><strong>Read " + list.length + " file(s):</strong> " + g + " game(s), " + gr + " ground row(s), " + c + " coach window(s) · " + j.busy_count + " blocked times will apply.</p>" +
+      (j.ingested.text ? "" : "<p class=\"muted\">No request words in these files, so the box is unchanged — the tables were read and will be used with whatever you type.</p>") +
       (j.ingested.notes.length ? "<p class=\"muted\">" + esc(j.ingested.notes.join(" ")) + "</p>" : "") +
       (j.mock ? "<p class=\"muted\">" + esc(j.note) + "</p>" : "") +
       "<p class=\"hint\">Now press the green button in Plan. Unmatched rows were kept and reported, never guessed.</p>";
-  } catch (err) { fail(err.message); }
+  } catch (err) { out.innerHTML = ""; fail(err.message); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 async function loadCalendar() { const r = await fetch("/api/calendar"); const j = await r.json(); S.current = j.events || []; S.events = []; S.proposal = null; S.diff = null; renderCurrent(); $("diff").textContent = "No proposal yet. Write a request in Plan and press the green button — every move and cancellation appears here in red."; syncButtons(); }
 /* Single-photo endpoints (/api/vision, /api/availability) remain available for hosts; the demo now reads everything through /api/ingest. */
@@ -436,6 +445,7 @@ async function init() {
   $("minimize-proposed").addEventListener("click", () => setWeeks($("calendar"), false));
   $("approve-btn").addEventListener("click", approve); $("notices-btn").addEventListener("click", notices);
   $("ingest-btn").addEventListener("click", readFiles);
+  $("ingest-files").addEventListener("change", () => { if ($("ingest-files").files.length) readFiles(); });
   $("record-btn").addEventListener("click", startRecording); $("record-stop").addEventListener("click", stopRecording);
   syncButtons();
 }

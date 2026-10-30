@@ -1,5 +1,28 @@
 # Changelog
 
+## v6.3.0 (2026-10-30)
+
+Additive, backward compatible: uploaded league games now work on a
+saved calendar, not only on a fresh plan.
+
+- `agent.handle(..., games=)` with a saved calendar or draft adds the
+  games as fixed game events and moves only the saved sessions they
+  clash with. Files with no words make no `parse_edits` call, so the
+  model is never asked to invent changes.
+- `build_edit_proposal(..., games=None)` (new keyword) does the same for
+  hosts that build the diff directly. Re-uploaded games already in the
+  calendar are not added twice.
+- A fixed league game outside the club's ground hours records its
+  `field_hours` check as passed with the reason ("League fixture: time
+  set by the league"); double booking, team overlap, blackout and busy
+  checks still apply to it. Same in `plan()` with `games=`.
+- Name matching: a leading "vs"/"v" on an opponent is dropped, and a
+  ground printed without its generic word ("South" for "South Field")
+  matches when exactly one club field has that short name. Ambiguous
+  short names stay unmatched.
+- Demo: with a saved calendar, an upload with an empty text box no
+  longer substitutes the full-season preset request.
+
 ## v6.2.1 (2026-10-30)
 
 Bug fix, no interface change: `extract_pdf_tables` now reads PDFs

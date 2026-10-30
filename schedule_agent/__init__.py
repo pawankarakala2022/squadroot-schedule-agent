@@ -47,7 +47,7 @@ from .apply_edits import build_edit_proposal
 from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits, session_key
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "6.2.1"
+__version__ = "6.3.0"
 
 __all__ = [
     "__version__",

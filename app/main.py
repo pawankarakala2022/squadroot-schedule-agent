@@ -994,13 +994,17 @@ def _request_with_games_default(body: dict, game_busy: list[Busy]) -> str:
 
     "Plan around these games" sends no typed request; with at least one
     blocking game the club's standard practice request is planned around
-    them instead of failing with "please describe the request". Games
-    that matched nothing block nothing, so that case fails clearly.
+    them instead of failing with "please describe the request". With a
+    saved calendar or draft the games themselves are the change (added
+    as fixed events, clashing sessions moved), so no request is invented.
+    Games that matched nothing block nothing, so that case fails clearly.
     """
     request = body.get("request") or ""
     if isinstance(request, str) and request.strip():
         return request
     if game_busy:
+        if body.get("events") or body.get("proposal"):
+            return ""
         return str(CLUB["presets"]["plan_request"])
     if body.get("games") or body.get("ingested"):
         raise HTTPException(

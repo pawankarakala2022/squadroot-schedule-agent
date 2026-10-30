@@ -3,7 +3,11 @@
 The model reads game rows (date, start time, home/away teams, field)
 from schedule image bytes via multimodal chat; code matches names to the
 problem's teams and fields. Matching is exact (case-insensitive, never
-guessed): unmatched rows are kept with ``matched=False`` and a note.
+guessed): unmatched rows are kept with ``matched=False`` and a note. Two
+deterministic spellings also count as exact: a leading "vs"/"v" on an
+opponent is dropped, and a ground printed without its generic word
+("South" for "South Field") matches when exactly one club field has
+that short name.
 :func:`games_to_busy` turns every row with a readable date/time and at
 least one exactly-matched team or field into ``Busy`` intervals for the
 known resources only, so practices fit around league games. A league
@@ -17,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -234,6 +239,36 @@ def _as_start(value: object) -> time | None:
     return None
 
 
+_GROUND_WORDS = ("field", "fields", "ground", "grounds", "pitch", "park", "oval", "court", "diamond")
+_VERSUS_RE = re.compile(r"^(?:vs?\.?)\s+", re.IGNORECASE)
+
+
+def _short_ground(name: str) -> str:
+    """Field name without a trailing generic word: "South Field" -> "south"."""
+    words = name.strip().casefold().split()
+    if len(words) > 1 and words[-1] in _GROUND_WORDS:
+        words = words[:-1]
+    return " ".join(words)
+
+
+def _field_id(name: str, problem: Problem) -> str | None:
+    """Club field id for a printed ground name: exact, else a unique short name."""
+    key = name.strip().casefold()
+    if not key:
+        return None
+    for f in problem.fields:
+        if f.name.strip().casefold() == key:
+            return f.id
+    short = _short_ground(name)
+    hits = [f.id for f in problem.fields if _short_ground(f.name) == short]
+    return hits[0] if len(hits) == 1 else None
+
+
+def _strip_versus(name: str) -> str:
+    """Drop a leading "vs" / "v" printed before an opponent ("Vs Gamblers" -> "Gamblers")."""
+    return _VERSUS_RE.sub("", name.strip(), count=1).strip()
+
+
 def _clean(data: object, problem: Problem) -> tuple[ScheduleImport | None, list[str]]:
     """Return (ScheduleImport or None when unusable, issues for retry)."""
     if not isinstance(data, dict):
@@ -242,7 +277,6 @@ def _clean(data: object, problem: Problem) -> tuple[ScheduleImport | None, list[
     if not isinstance(raw_games, list):
         return None, ["'games' was not a list."]
     teams = {t.name.strip().casefold(): t.id for t in problem.teams}
-    fields = {f.name.strip().casefold(): f.id for f in problem.fields}
     games: list[GameImport] = []
     for raw in raw_games:
         if not isinstance(raw, dict):
@@ -252,14 +286,14 @@ def _clean(data: object, problem: Problem) -> tuple[ScheduleImport | None, list[
                 )
             )
             continue
-        home = str(raw.get("home", "")).strip()
-        away = str(raw.get("away", "")).strip()
+        home = _strip_versus(str(raw.get("home", "")))
+        away = _strip_versus(str(raw.get("away", "")))
         field_name = str(raw.get("field", "")).strip()
         parsed_date = _as_date(raw.get("date"))
         parsed_start = _as_start(raw.get("start"))
         home_id = teams.get(home.casefold())
         away_id = teams.get(away.casefold())
-        field_id = fields.get(field_name.casefold())
+        field_id = _field_id(field_name, problem)
         problems: list[str] = []
         if parsed_date is None:
             problems.append(f"bad date {raw.get('date')!r}")
@@ -581,7 +615,6 @@ def _clean_availability(data: object, problem: Problem) -> tuple[AvailabilityImp
     if not isinstance(raw_grounds, list) or not isinstance(raw_coach, list):
         return None, ["'grounds' and 'coach' must both be lists."]
     teams = {t.name.strip().casefold(): t.id for t in problem.teams}
-    fields = {f.name.strip().casefold(): f.id for f in problem.fields}
     grounds: list[GroundAvailability] = []
     for raw in raw_grounds:
         if not isinstance(raw, dict):
@@ -591,7 +624,7 @@ def _clean_availability(data: object, problem: Problem) -> tuple[AvailabilityImp
         row_notes: list[str] = []
         days = _clean_weekdays(raw.get("weekdays", []), row_notes)
         open_from, open_until = _as_start(raw.get("open_from")), _as_start(raw.get("open_until"))
-        field_id = fields.get(name.casefold())
+        field_id = _field_id(name, problem)
         problems = list(row_notes)
         if field_id is None:
             problems.append(f"unknown field {name!r}")
