@@ -138,10 +138,13 @@ def test_calendar_is_nov_dec_sample() -> None:
     assert cal["team_count"] == 4 and cal["coach_count"] == 2 and cal["events"]
     assert all("2026-11-01" <= e["starts_at"][:10] <= "2026-11-30" for e in cal["events"])
     assert all(not s["week_start"].startswith("2026-12") for s in cal["proposal"]["shortfalls"])  # no December shortfall noise
+    # Plan the season fills November; every other call may use the whole season, December included.
+    assert club_problem(plan_window=True).season_end == date(2026, 11, 30)
     problem = club_problem()
-    assert problem.season_end == date(2026, 11, 30)  # solver never places in December
-    assert date(2026, 12, 1) in problem.blackout_dates and date(2026, 12, 31) in problem.blackout_dates
-    assert all(f.open_from is not None and f.open_until is not None for f in problem.fields)  # grounds stay open
+    assert problem.season_end == date(2026, 12, 31) and not problem.blackout_dates
+    assert all(f.open_from is not None and f.open_until is not None for f in problem.fields)
+    # The plan's rules keep the November window, so revising the draft stays in November.
+    assert all(r["active_until"] == "2026-11-30" for r in _plan()["rules"]["requirements"])
     assert all(c["passed"] for c in cal["proposal"]["check_results"])
     assert {e["team_id"] for e in cal["events"]} == {f"t{i}" for i in range(1, 5)}
 
@@ -335,41 +338,51 @@ def test_modes_report_booleans_only() -> None:
     assert all(isinstance(v, bool) for v in modes.values())  # never key material
 
 
-def test_frontend_shows_current_diff_and_simple_primary() -> None:
+def test_frontend_three_buttons_plan_run_approve() -> None:
     html = index().path.read_text(encoding="utf-8")
-    assert 'id="run-btn"' in html and "Create schedule / Apply my wording" in html
-    assert 'id="current-calendar"' in html and 'id="diff"' in html
-    # One prompt: typing, recording and files all land in the same box.
-    assert 'id="ingest-files"' in html and 'id="ingest-btn"' in html and "Read file(s) into this box" in html
-    assert 'id="record-btn"' in html and "Speak" in html and "One box: type, speak, or attach" in html
+    # Exactly three primary actions, in order: Plan the season, Run, Approve.
+    assert html.count('class="primary"') == 3
+    assert html.index('id="plan-btn"') < html.index('id="run-btn"') < html.index('id="approve-btn"')
+    assert ">Plan the season</button>" in html and ">Run</button>" in html and ">Approve</button>" in html
+    assert "presets.plan_request" in html  # Plan uses the club's standard rules
+    # Plan shows what it will build before it runs, and a new season is reviewed as its weekly pattern.
+    assert html.index('id="plan-preview"') < html.index('id="plan-btn"') and "What will be built" in html
+    assert "renderPlanPreview()" in html and "patternHtml(S.events)" in html and "Check the weekly pattern" in html
+    assert 'fetch("/api/calendar")' in html and "The schedule it will create" in html
+    # Review compares with the approved schedule, so the red list is everything Approve saves.
+    assert "S.base = S.current.slice();" in html
+    # Notices cover only what changed since the last approval, for the affected teams.
+    assert 'post("/api/notices", { events: changed })' in html and "CANCELLED: " in html and "moved from" in html
+    # The sample league games include one on a practice slot, so the demo shows a clash being moved.
+    assert 'game("2026-11-16", "17:00:00", "North Field")' in html
+    # Who did what: the model line names the model calls; times come from the solver.
+    assert 'id="by-model"' in html and "placed by the solver and checked in code" in html
+    # One request box: typing, speaking and attaching all feed Run.
+    assert 'id="request"' in html and 'id="record-btn"' in html and 'id="ingest-files"' in html
+    assert 'addEventListener("change", readFiles)' in html  # attaching reads at once, no extra button
+    assert 'id="ingest-btn"' not in html and 'id="record-stop"' not in html
     # Speak records 16 kHz mono WAV (the format the endpoint takes), never WebM.
     assert "voice-note.wav" in html and "toWav16k" in html and "MediaRecorder" not in html
-    assert "can be wrong" in html and "modes.meta" in html  # real mode preferred, mock warned
-    assert "Mock has pre-defined questions and answers" in html and 'id="mock-note"' in html
-    assert "Muse Spark via Baseten" in html and "hosted via Baseten" in html
-    # Pinned tabs scroll to Plan / Review / Approve; sessions collapse by week.
-    assert 'href="#plan"' in html and 'href="#review"' in html and 'href="#approve"' in html
-    assert "position: sticky" in html and "Expand all sessions" in html and "Minimize sessions" in html
-    assert "Week of " in html and 'details class=' in html
-    assert "Will be cancelled (red)" in html and "CONFLICT" in html
-    # Review order: shortfalls at the top (red on conflict), checks at the bottom.
-    assert html.index('id="shortfalls"') < html.index('id="diff"') < html.index('id="summary"')
-    assert html.index('id="calendar"') < html.index('id="checks"')
-    assert "alert-red" in html and "Conflict — could not be placed" in html
-    assert "Grounds stay open in December" in html and "no sessions are scheduled there" in html
-    # Waiting signal: spinner banner appears and the button locks while running.
-    assert 'id="working"' in html and 'class="spinner"' in html
-    assert "do not press the button again" in html and "setBusy(true" in html and "setBusy(false)" in html
-    # Questions come from the library (proposal.questions); the app just shows them.
-    assert 'id="questions"' in html and "Quick question before you approve" in html
-    assert "question-answer" in html and "question-send" in html
-    # What I understood: one chip per change, before the result detail.
-    assert 'id="understood"' in html and "What I understood" in html
-    assert html.index('id="understood"') < html.index('id="diff"')
-    # Simple flow only: no Advanced single-action buttons and no
-    # tap-to-select session picking under Plan.
-    assert 'id="plan-btn"' not in html and "Advanced — run exactly one action" not in html
-    assert "Tap to select" not in html and "selected_session_ids: S.selected" not in html
+    # Real model preferred when a key exists; mock clearly labelled.
+    assert "modes.meta" in html and 'id="mock-note"' in html
+    # Mock locks free input and offers only requests it answers correctly.
+    assert 'id="mock-request"' in html and '$("request").disabled = mock' in html
+    assert '$("ingest-files").disabled = mock' in html and "payload.games = mockGames()" in html
+    for preset in ("Rain Thursday November 12, North Field is closed.", "Cancel all Thursday sessions."):
+        assert 'value="' + preset + '"' in html
+    # Result: changes in red, checks, questions block approval, details folded away.
+    assert 'id="diff"' in html and 'tr class=\\"" + cls' in html and "cancelled" in html
+    assert 'id="checks"' in html and "Conflicts — fix these before approving" in html and "CONFLICT" in html
+    assert 'id="questions"' in html and "question-answer" in html and "question-send" in html
+    assert "Week of " in html and "<summary>Full schedule</summary>" in html
+    assert html.index('id="questions"') < html.index('id="diff"') < html.index('id="checks"')
+    # Waiting signal: spinner banner, buttons lock while running.
+    assert 'id="working"' in html and 'class="spinner"' in html and "setBusy(true" in html and "setBusy(false)" in html
+    # Approve drafts the family notices itself (no separate button).
+    assert "/api/notices" in html and 'id="notices-btn"' not in html
+    # Nothing extra: no tabs, examples, reload, expand/minimize, trace or understood chips.
+    for gone in ('href="#plan"', "preset-rain", "reset-btn", "Expand all sessions", 'id="trace"', 'id="understood"', "Tap to select"):
+        assert gone not in html, gone
 
 
 def test_mock_voice_and_vision() -> None:
@@ -454,4 +467,4 @@ def test_spanish_names_stay_english_and_language_detected() -> None:
     assert _request_language({"request": "Los Zorros practican los jueves"}) == "es"
     assert _request_language({"request": "Foxes practice on Thursdays"}) == "en"
     html = index().path.read_text(encoding="utf-8")
-    assert "correctedRequest" in html and "correct your request in place" in html
+    assert "correctedRequest(a)" in html and "ES_NAMES" in html  # answers correct the request in place

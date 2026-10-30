@@ -125,3 +125,50 @@ def test_selected_session_visible_and_clamping():
                        events=events, selected_session_ids=[session_key(events[1])])
     assert plan.ops[0].target.session_ids == [session_key(events[1])]
     assert plan.ops[0].duration_minutes == 240
+
+
+def _recurring_in(date_from: str, date_to: str) -> dict:
+    """create_recurring for Foxes on Mondays, limited to a period (as the model encodes 'every Monday in December')."""
+    return _op(action="create_recurring",
+               target={"session_labels": [], "team_aliases": ["T1"], "field_aliases": [], "weekdays": [],
+                       "date_from": date_from, "date_to": date_to, "event_types": []},
+               to={"date": "", "start_time": "", "field_alias": "", "weekdays": [0],
+                   "earliest_start": "", "latest_end": "", "exactness": "any"},
+               team_alias="T1", event_type="practice", duration_minutes=60, sessions_per_week=1)
+
+
+def test_date_outside_season_asks_instead_of_widening_the_change():
+    # Season ends Nov 29: "every Monday in December" must not become every Monday of the season.
+    payload = {"ops": [_recurring_in("2026-12-01", "2026-12-31")], "questions": [], "notes": []}
+    plan = parse_edits(_problem(), "Add a Foxes practice every Monday in December", _chat(payload), events=_events())
+    assert plan.ops == []
+    assert any("2026-12-01 is outside the season" in q for q in plan.questions)
+
+
+def test_recurring_with_a_period_places_only_inside_it():
+    from schedule_agent import ScheduleAgent
+
+    problem = _problem()
+    problem.season_end = date(2026, 12, 31)
+    payload = {"ops": [_recurring_in("2026-12-01", "2026-12-31")], "questions": [], "notes": []}
+    agent = ScheduleAgent(_chat(payload), deterministic_summary=True)
+    out = agent.handle(problem, "Add a Foxes practice every Monday in December", events=_events())
+    new = [e for e in out.events if e not in _events()]
+    tz = ZoneInfo(TZ)
+    assert [e.starts_at.astimezone(tz).date().isoformat() for e in new] == ["2026-12-07", "2026-12-14", "2026-12-21", "2026-12-28"]
+    assert all(e.starts_at.astimezone(tz).hour == 17 for e in new)  # December Mondays are free: first slot
+    assert all(c.passed for c in out.check_results) and not out.questions
+
+
+def test_weekly_session_on_a_day_the_team_already_trains_asks_first():
+    from schedule_agent import ScheduleAgent
+
+    # No period: the model missed "in December", so Mondays land on Foxes' existing Monday.
+    undated = _recurring_in("", "")
+    undated["target"]["team_aliases"] = []
+    payload = {"ops": [undated], "questions": [], "notes": []}
+    agent = ScheduleAgent(_chat(payload), deterministic_summary=True)
+    out = agent.handle(_problem(), "Add a Foxes practice every Monday", events=_events())
+    assert any("Foxes already have a session on 1 of those days" in q for q in out.questions)
+    with pytest.raises(AgentError):  # approval is refused while a question is open
+        agent.approve(out)

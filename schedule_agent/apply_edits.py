@@ -545,9 +545,13 @@ class _Builder:
             title=op.title or f"{team_name} {event_type}",
             active_from=op.to.date if op.to else None, active_until=op.to.date if op.to else None,
         )
-        # A dated recurring op is a one-off in disguise; keep the season otherwise.
+        # A date on a weekly op is where the weekly sessions start ("every Monday from
+        # Dec 7"); it never widens the op back to the whole season.
         if op.to is not None and op.to.date is not None:
-            req.active_from = req.active_until = None
+            req.active_from, req.active_until = op.to.date, None
+        # A period in the target ("every Monday in December") bounds the weekly sessions.
+        if op.target is not None and (op.target.date_from is not None or op.target.date_to is not None):
+            req.active_from, req.active_until = op.target.date_from, op.target.date_to
         self.derived_requirements.append(req)
         sub = self._solving_problem(
             self.problem.season_start, self.problem.season_end,
@@ -558,6 +562,20 @@ class _Builder:
             self.added.append(ev)
             self.created.append(ev)
         self.shortfalls.extend(draft.shortfalls)
+        # A new weekly session on a day the team already trains is rarely meant
+        # (often a missed date range): ask before approval instead of stacking it.
+        trains = {(e.team_id, e.starts_at.astimezone(self.tz).date()): e for e in self.kept}
+        doubled = [trains[(ev.team_id, ev.starts_at.astimezone(self.tz).date())] for ev in draft.events
+                   if (ev.team_id, ev.starts_at.astimezone(self.tz).date()) in trains]
+        if doubled:
+            first = doubled[0]
+            question = (
+                f"{team_name} already have a session on {len(doubled)} of those days "
+                f"(for example {_fmt_event(self.problem, first)}). Do you want a second session on the same day, "
+                "or did you mean other dates?"
+            )
+            if question not in self.questions:
+                self.questions.append(question)
 
     def _do_block(self, op: EditOp) -> None:
         target = op.target

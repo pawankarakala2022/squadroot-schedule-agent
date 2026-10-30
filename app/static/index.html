@@ -3,144 +3,114 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Riverside Youth Club — Schedule Agent demo</title>
+<title>Schedule Agent</title>
 <style>
 :root { --green: #157347; --dark: #14532d; --red: #b02a37; --red-bg: #fdebec; --ink: #1c2429; --muted: #55636c; --line: #cfd8dd; }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
 body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 17px; color: var(--ink); background: #f2f5f3; }
-main { max-width: 52rem; margin: 0 auto; padding: 0 1rem 3rem; }
-h1 { font-size: 1.35rem; margin: 0.6rem 0 0.2rem; }
-h2 { font-size: 1.15rem; margin: 0 0 0.5rem; }
-h3 { font-size: 1rem; margin: 1.1rem 0 0.4rem; }
-p, li { line-height: 1.55; }
-section.tab { background: #fff; border: 1px solid var(--line); border-radius: 0.7rem; padding: 1rem; margin: 0.9rem 0; scroll-margin-top: 4.2rem; }
-.step-num { display: inline-block; background: var(--green); color: #fff; border-radius: 50%; width: 1.7rem; height: 1.7rem; line-height: 1.7rem; text-align: center; font-size: 0.95rem; margin-right: 0.4rem; }
-nav.tabs { position: sticky; top: 0; z-index: 20; display: flex; gap: 0.4rem; background: #fff; border-bottom: 2px solid var(--green); padding: 0.5rem 0; }
-nav.tabs a { flex: 1; text-align: center; text-decoration: none; color: var(--ink); font-weight: 700; padding: 0.65rem 0.3rem; border: 1px solid var(--line); border-radius: 0.5rem; background: #f4f6f7; }
-nav.tabs a.active { background: var(--green); color: #fff; border-color: var(--green); }
-nav.tabs a small { display: block; font-weight: 400; font-size: 0.78rem; }
+main { max-width: 44rem; margin: 0 auto; padding: 0 1rem 3rem; }
+h1 { font-size: 1.35rem; margin: 1rem 0 0.2rem; }
+h2 { font-size: 1.1rem; margin: 0 0 0.3rem; }
+p { line-height: 1.5; margin: 0.35rem 0; }
+section { background: #fff; border: 1px solid var(--line); border-radius: 0.7rem; padding: 1rem; margin: 0.9rem 0; }
+.num { display: inline-block; background: var(--green); color: #fff; border-radius: 50%; width: 1.6rem; height: 1.6rem; line-height: 1.6rem; text-align: center; font-size: 0.95rem; margin-right: 0.4rem; }
 .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.5rem 0; }
-button, select { min-height: 2.9rem; font-size: 1rem; }
-button { padding: 0.6rem 0.95rem; border-radius: 0.5rem; border: 1px solid var(--line); background: #f4f6f7; cursor: pointer; }
-button.primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 700; width: 100%; text-align: center; font-size: 1.05rem; }
+button, select, .file { min-height: 2.8rem; font-size: 1rem; }
+button, .file { padding: 0.55rem 0.9rem; border-radius: 0.5rem; border: 1px solid var(--line); background: #f4f6f7; cursor: pointer; color: var(--ink); display: inline-flex; align-items: center; }
+.file input { display: none; }
+.file.off { opacity: 0.45; pointer-events: none; }
+#plan-preview { color: var(--ink); }
+#plan-preview ul { margin: 0.2rem 0; padding-left: 1.2rem; }
+#plan-preview li { margin: 0.15rem 0; }
+#mock-request { width: 100%; margin: 0.3rem 0; padding: 0 0.5rem; }
+textarea:disabled { background: #eef1f2; }
+button.primary { background: var(--green); color: #fff; border-color: var(--green); font-weight: 700; width: 100%; justify-content: center; font-size: 1.05rem; margin-top: 0.4rem; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
-textarea { width: 100%; min-height: 5.5rem; font-size: 1.05rem; padding: 0.65rem; border-radius: 0.5rem; border: 1px solid var(--line); }
-pre { white-space: pre-wrap; background: #f4f6f7; padding: 0.65rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.92rem; }
-.chip { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 1rem; font-size: 0.85rem; margin: 0.1rem; }
-.ok { background: #d1e7dd; color: #0f5132; }
-.bad { background: var(--red-bg); color: #842029; border: 1px solid #f1aeb5; }
+textarea { width: 100%; min-height: 4.5rem; font: inherit; padding: 0.6rem; border-radius: 0.5rem; border: 1px solid var(--line); }
 .muted { color: var(--muted); font-size: 0.93rem; }
-.hint { color: var(--muted); font-size: 0.9rem; margin: 0.2rem 0 0; }
-#error { background: var(--red-bg); color: #842029; padding: 0.65rem; border-radius: 0.5rem; border: 1px solid #f1aeb5; margin: 0.6rem 0; }
-.alert-red { background: var(--red-bg); border: 1px solid #f1aeb5; border-radius: 0.5rem; padding: 0.6rem; }
-.card { border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.75rem; margin: 0.6rem 0; }
-table { border-collapse: collapse; width: 100%; font-size: 0.92rem; margin: 0.4rem 0; }
+.ok { color: #0f5132; font-weight: 600; }
+.bad { background: var(--red-bg); color: #842029; border: 1px solid #f1aeb5; border-radius: 0.5rem; padding: 0.55rem; margin: 0.5rem 0; }
+.ask { background: #fff8e1; border: 1px solid #8a6d00; border-radius: 0.5rem; padding: 0.6rem; margin: 0.5rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; margin: 0.4rem 0; }
 td, th { border: 1px solid var(--line); padding: 0.35rem 0.45rem; text-align: left; vertical-align: top; }
 tr.changed td { background: var(--red-bg); }
 tr.cancelled td { background: var(--red-bg); color: #842029; text-decoration: line-through; }
-tr.conflict td { background: var(--red-bg); border-color: #f1aeb5; }
-li.changed, li.conflict { background: var(--red-bg); border-radius: 0.35rem; padding: 0.15rem 0.35rem; }
-details.week, details.more { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.35rem 0.6rem; margin: 0.45rem 0; background: #fbfcfb; }
-details.week > summary, details.more > summary { cursor: pointer; font-weight: 700; padding: 0.45rem 0; }
-details.week ul { margin: 0.3rem 0 0.5rem; padding-left: 1.25rem; }
-.notice { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.6rem; margin: 0.5rem 0; }
-#working { display: flex; gap: 0.6rem; align-items: center; background: #e7f3ec; border: 1px solid var(--green); color: var(--dark); padding: 0.65rem; border-radius: 0.5rem; margin: 0.6rem 0; font-weight: 600; }
+details { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.3rem 0.6rem; margin: 0.45rem 0; background: #fbfcfb; }
+summary { cursor: pointer; font-weight: 600; padding: 0.35rem 0; }
+details ul { margin: 0.2rem 0 0.4rem; padding-left: 1.2rem; }
+li.changed, li.conflict { background: var(--red-bg); border-radius: 0.35rem; padding: 0.1rem 0.3rem; }
+pre { white-space: pre-wrap; font: inherit; font-size: 0.92rem; margin: 0.3rem 0; }
+.notice { border-top: 1px solid var(--line); padding: 0.5rem 0; }
+#working { display: flex; gap: 0.6rem; align-items: center; background: #e7f3ec; border: 1px solid var(--green); color: var(--dark); padding: 0.6rem; border-radius: 0.5rem; margin: 0.6rem 0; font-weight: 600; }
 #working[hidden] { display: none; }
 .spinner { width: 1.1rem; height: 1.1rem; flex: none; border-radius: 50%; border: 3px solid #bcd8c6; border-top-color: var(--green); animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } html { scroll-behavior: auto; } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>
 </head>
 <body>
 <main>
-<h1 id="club">Schedule Agent demo</h1>
-<p class="muted" id="club-sub">Ask in words, review every change in red, then approve. Nothing is applied until you approve.</p>
-<nav class="tabs" aria-label="Steps">
-<a href="#plan" data-tab="plan" class="active">1 · Plan<small>words, voice, photos</small></a>
-<a href="#review" data-tab="review">2 · Review<small>what will change</small></a>
-<a href="#approve" data-tab="approve">3 · Approve<small>confirm &amp; notify</small></a>
-</nav>
-
-<section class="tab" id="plan">
-<h2><span class="step-num">1</span>Plan — tell the agent what you need</h2>
+<h1 id="club">Schedule Agent</h1>
+<p class="muted">Plan the season, ask for changes, then approve. Nothing is saved until you approve.</p>
 <div class="row">
-<label for="mode">Model:</label>
+<label for="mode" class="muted">Model</label>
 <select id="mode">
-<option value="meta">Meta API — real assistant (recommended)</option>
-<option value="open">Open weights — Muse Spark via Baseten</option>
-<option value="mock" selected>Mock — pre-defined questions &amp; answers (offline, can be wrong)</option>
+<option value="meta">Meta API</option>
+<option value="open">Muse Spark (open weights)</option>
+<option value="mock" selected>Mock (offline, scripted answers)</option>
 </select>
-<span class="muted" id="mode-note"></span>
 </div>
-<div id="mock-note" hidden style="background:#fff8e1;border:1px solid #8a6d00;border-radius:0.5rem;padding:0.65rem;margin:0.4rem 0">
-<strong>Note:</strong> Mock has pre-defined questions and answers. It does not read your words like the real assistant — the Example buttons and demo presets are scripted, and typed questions can get canned or wrong answers. Add <code>MODEL_API_KEY</code> to <code>.env</code> (or Docker) and choose Meta API for real answers.
-</div>
+<p id="mock-note" class="muted" hidden>Mock mode works offline with scripted answers, so it can only run the ready-made requests in step 2. Choose Meta API to type, speak or attach your own.</p>
 
-<h3>One box: type, speak, or attach a photo / PDF</h3>
-<label class="muted" for="request">Say what you need in your own words. Voice, photos and PDFs are read into this same box — then press the green button.</label>
-<textarea id="request" placeholder="e.g. Foxes practice twice a week after 5pm, or: Cancel all Thursday sessions, or: Rain Thursday Nov 12, North Field is closed"></textarea>
-<div class="row"><button id="record-btn" type="button">● Speak</button><button id="record-stop" type="button" disabled>Stop</button><span class="muted" id="record-status"></span></div>
-<div class="row"><input type="file" id="ingest-files" multiple accept="image/*,application/pdf,audio/*,text/plain,.txt,.md,.csv"><button id="ingest-btn" type="button">Read file(s) into this box →</button></div>
-<div id="ingest-result"></div>
-<p class="hint">A photo or PDF of a league schedule, ground hours or a voice note is read together with your words. Matched rows block time in the next schedule; unmatched rows are reported, never guessed. For a scanned PDF, send a screenshot of the page instead.</p>
+<section id="plan">
+<h2><span class="num">1</span>Plan the season</h2>
+<p class="muted" id="plan-hint">Builds every team's weekly practices from the club's rules.</p>
+<details id="plan-box" open><summary>What will be built</summary><div id="plan-preview" class="muted">Loading the club's rules…</div></details>
+<button id="plan-btn" type="button" class="primary">Plan the season</button>
+</section>
+
+<section id="run">
+<h2><span class="num">2</span>Ask for a change</h2>
+<p class="muted" id="run-hint">Type it, say it, or attach a league schedule (PDF or photo). Any language.</p>
+<select id="mock-request" hidden aria-label="Ready-made request">
+<option value="Rain Thursday November 12, North Field is closed.">Rain Thursday November 12, North Field is closed</option>
+<option value="Cancel all Thursday sessions.">Cancel all Thursday sessions</option>
+<option value="Cancel Foxes practice on Monday November 16.">Cancel Foxes practice on Monday November 16</option>
+<option value="games">Add Foxes league games (one clashes with a practice)</option>
+</select>
+<textarea id="request" placeholder="e.g. Rain on Thursday, North Field is closed — or: cancel Foxes practice next Monday"></textarea>
 <div class="row">
-<button id="preset-plan" type="button">Example: build a schedule</button>
-<button id="preset-rain" type="button">Example: rain / closed field</button>
-<button id="preset-cancel" type="button">Example: cancel sessions</button>
+<button id="record-btn" type="button">🎤 Speak</button>
+<label class="file">📎 Attach<input type="file" id="ingest-files" multiple accept="image/*,application/pdf,audio/*,text/plain,.txt,.md,.csv"></label>
+<span class="muted" id="input-status"></span>
 </div>
-<p class="hint">Examples only fill the box above. Nothing runs until you press the green button.</p>
-<button id="run-btn" type="button" class="primary">Create schedule / Apply my wording →</button>
-<div id="working" hidden role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="working-text">Working… your schedule is being created. Please wait — do not press the button again.</span></div>
-<p class="hint">One button for everything: a new plan, a move, a cancellation or an extra session. The app works out which one you mean.</p>
-<details class="more">
-<summary>Your club right now — the saved schedule proposals are compared against</summary>
-<p class="muted" id="club-facts">Loading the demo club…</p>
-<div id="current-calendar" class="muted">Loading…</div>
-<div class="row"><button id="reset-btn" type="button">Reload sample schedule</button></div>
-</details>
-<div id="error" hidden></div>
+<button id="run-btn" type="button" class="primary">Run</button>
 </section>
 
-<section class="tab" id="review">
-<h2><span class="step-num">2</span>Review — check every change before it counts</h2>
-<div id="clarify" hidden></div>
-<div id="questions" hidden></div>
-<h3>What I understood</h3>
-<div id="understood" class="muted">No changes understood yet.</div>
-<p class="muted"><span class="chip bad">Red</span> = changed, cancelled, or a conflict to fix. Plain rows have not changed. Weeks start minimized — tap a week to see its sessions.</p>
-<h3>Could not be placed</h3>
-<div id="shortfalls" class="muted">—</div>
-<h3>What will change</h3>
-<div id="diff" class="muted">No proposal yet. Write a request in Plan and press the green button — every move and cancellation appears here in red.</div>
-<h3>Summary</h3>
-<pre id="summary" class="muted">No proposal yet.</pre>
-<h3>Proposed schedule</h3>
-<div class="row"><button id="expand-proposed" type="button">Expand all sessions</button><button id="minimize-proposed" type="button">Minimize sessions</button></div>
-<div id="calendar" class="muted">—</div>
-<h3>Checks — conflicts are red and block approval</h3>
-<div id="checks" class="muted">—</div>
-<details class="more">
-<summary>Steps the agent took (for checking its work)</summary>
-<pre id="trace" class="muted">—</pre>
-</details>
+<div id="working" hidden role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span><span id="working-text">Working… please wait.</span></div>
+<div id="error" class="bad" hidden></div>
+
+<section id="review" hidden>
+<h2>What will change</h2>
+<p id="by-model" class="muted"></p>
+<div id="questions"></div>
+<div id="diff"></div>
+<div id="checks"></div>
+<details><summary>Full schedule</summary><div id="calendar"></div></details>
+<details><summary>The assistant's explanation</summary><pre id="summary"></pre></details>
 </section>
 
-<section class="tab" id="approve">
-<h2><span class="step-num">3</span>Approve — only you can make it count</h2>
-<p class="muted">Approve records your decision. The app saves nothing by itself; your club system saves after approval. You can approve only when every check passes.</p>
-<button id="approve-btn" type="button" class="primary" disabled>Approve this proposal ✓</button>
-<div id="approval" class="muted" style="margin-top:0.5rem"></div>
-<h3>Family notices</h3>
-<p class="hint">After approval, draft one notice per family language from the approved sessions.</p>
-<div class="row"><button id="notices-btn" type="button" disabled>Draft family notices</button></div>
-<div id="notices" class="muted">—</div>
-<p class="muted">To change the schedule afterwards, go back to Plan, write the change, review it here, and approve the new draft.</p>
+<section id="approve">
+<h2><span class="num">3</span>Approve</h2>
+<p class="muted" id="approve-hint">Plan or run something first.</p>
+<button id="approve-btn" type="button" class="primary" disabled>Approve</button>
+<div id="approval"></div>
+<div id="notices"></div>
 </section>
 </main>
 <script>
 "use strict";
-const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], games: null, ingested: null, club: null, approved: false, diff: null, busy: false, questions: [], understood: [], lastRequest: "" };
+const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], ingested: null, club: null, approved: false, diff: null, busy: false, questions: [], lastRequest: "" };
 const $ = (id) => document.getElementById(id);
 const DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -149,9 +119,25 @@ function clearFail() { $("error").hidden = true; }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function teamName(id) { const t = ((S.club || {}).teams || []).find((x) => x.id === id); return t ? t.name : id; }
 function fieldName(id) { const f = ((S.club || {}).fields || []).find((x) => x.id === id); return f ? f.name : id; }
-function fmt(e) { return e.starts_at.slice(0, 10) + " " + e.starts_at.slice(11, 16) + "–" + e.ends_at.slice(11, 16) + " · " + (e.title || e.event_type) + " (" + teamName(e.team_id) + ", " + fieldName(e.field_id) + ")"; }
+function when(e) { const [y, m, d] = e.starts_at.slice(0, 10).split("-").map(Number); const wd = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; return DAY[wd] + " " + d + " " + MONTH[m - 1] + ", " + e.starts_at.slice(11, 16) + "–" + e.ends_at.slice(11, 16); }
+function fmt(e) { return when(e) + " · " + (e.title || teamName(e.team_id) + " " + e.event_type) + " · " + fieldName(e.field_id); }
 function key(e) { return [e.team_id, e.field_id, e.event_type, e.title, e.starts_at, e.ends_at].join("|"); }
-function setModeNote() { const mock = S.mode === "mock"; $("mock-note").hidden = !mock; $("mode-note").textContent = mock ? "Pre-defined questions and answers only — see the note below." : (S.mode === "open" ? "Muse Spark (open weights) hosted via Baseten, using OPEN_MODEL_API_BASE / OPEN_MODEL_API_KEY from .env." : "Real assistant using your key in .env. Mock is only an offline fallback."); }
+// Mock answers only scripted requests correctly, so it offers just those and locks free input.
+function setModeNote() {
+  const mock = S.mode === "mock";
+  $("mock-note").hidden = !mock; $("mock-request").hidden = !mock;
+  $("request").disabled = mock; $("record-btn").disabled = mock || S.busy; $("ingest-files").disabled = mock;
+  $("ingest-files").parentElement.classList.toggle("off", mock);
+  $("run-hint").textContent = mock ? "Pick a ready-made request, then press Run." : "Type it, say it, or attach a league schedule (PDF or photo). Any language.";
+  if (mock) { S.ingested = null; S.extraBusy = []; $("ingest-files").value = ""; $("input-status").textContent = ""; }
+}
+function mockGames() {
+  // Fictional Foxes league games, already matched to club ids: four Saturdays, plus one
+  // on Foxes' Monday practice slot so the demo shows a clash being moved automatically.
+  const team = S.club.teams.find((t) => t.name === "Foxes"), field = (n) => S.club.fields.find((f) => f.name === n);
+  const game = (date, start, ground) => ({ date, start, home: "Foxes", away: "Gamblers", field: ground, home_id: team.id, away_id: null, field_id: field(ground).id, matched: false, blocks_time: true, note: "" });
+  return { games: [...["2026-11-07", "2026-11-14", "2026-11-21", "2026-11-28"].map((d) => game(d, "09:00:00", "South Field")), game("2026-11-16", "17:00:00", "North Field")], notes: [] };
+}
 async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ mode: S.mode }, body)) });
   const j = await r.json().catch(() => ({}));
@@ -172,31 +158,90 @@ function computeDiff(base, next) {
 }
 function failedIndexes(p) { const s = new Set(); (p.check_results || []).filter((c) => !c.passed).forEach((c) => s.add(c.event_index)); return s; }
 function mondayOf(dateStr) { const [y, m, d] = dateStr.split("-").map(Number); const dt = new Date(Date.UTC(y, m - 1, d)); dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7)); return dt.toISOString().slice(0, 10); }
-function weekTitle(mon, count) { const [y, m, d] = mon.split("-").map(Number); return "Week of " + DAY[0] + " " + d + " " + MONTH[m - 1] + " · " + count + " session" + (count === 1 ? "" : "s"); }
 function weeksHtml(events, mark) {
   const weeks = {}; events.forEach((e, i) => { const w = mondayOf(e.starts_at.slice(0, 10)); (weeks[w] = weeks[w] || []).push([e, i]); });
   return Object.keys(weeks).sort().map((w) => {
-    const items = weeks[w]; const anyMarked = items.some(([e, i]) => mark && mark(e, i));
-    const rows = items.map(([e, i]) => { const m = mark ? mark(e, i) : ""; return "<li class=\"" + m + "\">" + esc(fmt(e) + (m === "conflict" ? " · CONFLICT" : (m === "changed" ? " · CHANGED" : ""))) + "</li>"; }).join("");
-    return "<details class=\"week\"" + (anyMarked ? " open" : "") + "><summary>" + esc(weekTitle(w, items.length)) + (anyMarked ? " — includes changes/conflicts" : "") + "</summary><ul>" + rows + "</ul></details>";
+    const items = weeks[w]; const [, m, d] = w.split("-").map(Number);
+    const rows = items.map(([e, i]) => { const c = mark ? mark(e, i) : ""; return "<li class=\"" + c + "\">" + esc(fmt(e)) + (c === "conflict" ? " · <strong>CONFLICT</strong>" : "") + "</li>"; }).join("");
+    return "<details><summary>Week of " + d + " " + MONTH[m - 1] + " · " + items.length + " session" + (items.length === 1 ? "" : "s") + "</summary><ul>" + rows + "</ul></details>";
   }).join("");
 }
-function setWeeks(box, open) { box.querySelectorAll("details.week").forEach((d) => { d.open = open; }); }
+
+/* ---------- results ---------- */
 function showProposal(p, trace, clarification, meta) {
-  S.base = S.events.length ? S.events.slice() : S.current.slice();
+  S.base = S.current.slice(); // always against the approved schedule: the red list is everything Approve saves
   S.proposal = p; S.events = p.events || []; S.approved = false; S.diff = computeDiff(S.base, S.events);
-  S.questions = (meta && meta.questions) || p.questions || []; S.understood = (meta && meta.understood) || [];
-  $("approval").textContent = ""; $("summary").textContent = p.summary || "(no summary)"; $("summary").classList.remove("muted");
-  $("trace").textContent = (trace || []).map((s) => JSON.stringify(s)).join("\n") || "—";
-  renderClarify(clarification || null); renderQuestions(); renderUnderstood(); renderDiff(); renderCalendar(); renderChecks(p); renderShortfalls(p); syncButtons();
-  document.getElementById("review").scrollIntoView({ block: "start" });
+  S.questions = ((meta && meta.questions) || p.questions || []).slice();
+  if (clarification && clarification.question) S.questions.push(clarification.question);
+  $("approval").innerHTML = ""; $("notices").innerHTML = "";
+  $("summary").textContent = p.summary || "";
+  $("review").hidden = false;
+  renderQuestions(); renderDiff(); renderChecks(p); renderCalendar(); syncButtons();
+  $("review").scrollIntoView({ block: "start" });
 }
-function renderUnderstood() {
-  const box = $("understood");
-  if (!S.understood.length) { box.textContent = "No changes understood yet."; return; }
-  box.innerHTML = S.understood.map((c) => "<span class=\"chip ok\">" + esc(c.text) + "</span>").join(" ");
-  box.classList.remove("muted");
+function dayMonth(iso) { const [, m, d] = iso.split("-").map(Number); return d + " " + MONTH[m - 1]; }
+// Step 1: what Plan will build, straight from the club data, before anything runs.
+function renderPlanPreview() {
+  const c = S.club, end = c.scheduling_end || c.season_end;
+  $("plan-preview").innerHTML = "<ul>" +
+    "<li><strong>Rule:</strong> " + esc(c.presets.plan_request) + "</li>" +
+    "<li><strong>Dates:</strong> " + esc(dayMonth(c.season_start)) + " – " + esc(dayMonth(end)) + " " + esc(end.slice(0, 4)) + "</li>" +
+    "<li><strong>Teams:</strong> " + esc(c.teams.map((t) => t.name).join(", ")) + "</li>" +
+    "<li><strong>Grounds:</strong> " + esc(c.fields.map((f) => f.name + (f.open_from ? " " + f.open_from + "–" + f.open_until : "")).join(", ")) + "</li>" +
+    (c.coaches || []).map((k) => "<li><strong>" + esc(k.label) + ":</strong> " + esc(k.note.replace(/^Coach \d+ /, "")) + "</li>").join("") +
+    "</ul><div id=\"plan-expected\"><p class=\"muted\">Working out the schedule these rules give…</p></div>";
 }
+// The same rules through the same solver, run ahead so the plan is visible before pressing the button.
+async function renderExpected() {
+  const box = $("plan-expected");
+  try {
+    const r = await fetch("/api/calendar"); const j = await r.json();
+    box.innerHTML = "<p><strong>The schedule it will create</strong> — " + j.events.length + " practices:</p>" + patternHtml(j.events) +
+      "<p class=\"muted\">Press the button to build it for real. Nothing is saved until you approve it in step 3.</p>";
+  } catch (err) { box.innerHTML = ""; }
+}
+// A new schedule reviewed as its weekly pattern: one row per team, day, time and ground.
+function patternHtml(events) {
+  const rows = new Map();
+  events.forEach((e) => {
+    const [y, m, d] = e.starts_at.slice(0, 10).split("-").map(Number), wd = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+    const k = [e.team_id, wd, e.starts_at.slice(11, 16), e.ends_at.slice(11, 16), e.field_id, e.event_type].join("|");
+    if (!rows.has(k)) rows.set(k, { e, wd, dates: [] });
+    rows.get(k).dates.push(e.starts_at.slice(0, 10));
+  });
+  const list = [...rows.values()].sort((a, b) => a.wd - b.wd || a.e.starts_at.slice(11, 16).localeCompare(b.e.starts_at.slice(11, 16)));
+  return "<table><tr><th>Team</th><th>Day</th><th>Time</th><th>Ground</th><th>Weeks</th></tr>" + list.map((r) => {
+    const ds = r.dates.sort();
+    return "<tr><td>" + esc(teamName(r.e.team_id)) + (r.e.event_type === "practice" ? "" : " (" + esc(r.e.event_type) + ")") + "</td><td>" + DAY[r.wd] + "</td><td>" + esc(r.e.starts_at.slice(11, 16) + "–" + r.e.ends_at.slice(11, 16)) + "</td><td>" + esc(fieldName(r.e.field_id)) + "</td><td>" + ds.length + " (" + esc(dayMonth(ds[0])) + (ds.length > 1 ? " – " + esc(dayMonth(ds[ds.length - 1])) : "") + ")</td></tr>";
+  }).join("") + "</table>";
+}
+function renderDiff() {
+  const d = S.diff, box = $("diff");
+  if (!S.base.length) { box.innerHTML = "<p><strong>New schedule: " + S.events.length + " sessions.</strong> Check the weekly pattern before you approve:</p>" + patternHtml(S.events); return; }
+  const table = (title, rows, cls) => rows.length ? "<p><strong>" + title + "</strong></p><table>" + rows.map((r) => "<tr class=\"" + cls + "\"><td>" + r + "</td></tr>").join("") + "</table>" : "";
+  let html = table("Added (" + d.added.length + ")", d.added.map((e) => esc(fmt(e))), "changed") +
+    table("Moved (" + d.moved.length + ")", d.moved.map((m) => esc(fmt(m.before)) + "<br>→ <strong>" + esc(fmt(m.after)) + "</strong>"), "changed") +
+    table("Cancelled (" + d.cancelled.length + ")", d.cancelled.map((e) => esc(fmt(e))), "cancelled");
+  if (!html) html = "<p>Nothing changes — the schedule stays as it is.</p>";
+  box.innerHTML = html + "<p class=\"muted\">" + d.unchanged.length + " other sessions stay exactly as they are.</p>";
+}
+function renderChecks(p) {
+  const total = p.check_results.length, failed = p.check_results.filter((c) => !c.passed);
+  let html = failed.length ? "" : "<p class=\"ok\">✓ All " + total + " checks passed — no double bookings or clashes.</p>";
+  if (failed.length) {
+    const byEvent = {}; failed.forEach((c) => { (byEvent[c.event_index] = byEvent[c.event_index] || []).push(c.reason); });
+    html += "<div class=\"bad\"><strong>Conflicts — fix these before approving:</strong><ul>" + Object.keys(byEvent).map((i) => "<li>" + esc(fmt(p.events[i])) + ": " + esc(byEvent[i].join(" ")) + "</li>").join("") + "</ul></div>";
+  }
+  if (p.shortfalls.length) html += "<div class=\"bad\"><strong>Could not be placed:</strong><ul>" + p.shortfalls.map((s) => "<li>" + esc(teamName(s.team_id)) + ": " + esc(s.reason) + "</li>").join("") + "</ul></div>";
+  $("checks").innerHTML = html;
+}
+function renderCalendar() {
+  const bad = failedIndexes(S.proposal || { check_results: [] });
+  const changed = new Set(); if (S.diff && S.base.length) { S.diff.moved.forEach((m) => changed.add(key(m.after))); S.diff.added.forEach((e) => changed.add(key(e))); }
+  $("calendar").innerHTML = S.events.length ? weeksHtml(S.events, (e, i) => bad.has(i) ? "conflict" : (changed.has(key(e)) ? "changed" : "")) : "<p class=\"muted\">No sessions.</p>";
+}
+
+/* ---------- questions (block approval until answered) ---------- */
 const ES_NAMES = { zorros: "Foxes", zorro: "Foxes", tejones: "Badgers", tejon: "Badgers", nutrias: "Otters", nutria: "Otters", lobos: "Wolves", lobo: "Wolves", "campo norte": "North Field", "campo sur": "South Field" };
 function englishName(text) { let out = text; for (const [es, en] of Object.entries(ES_NAMES)) out = out.replace(new RegExp("\\b(los\\s+|las\\s+)?" + es + "\\b", "gi"), en); return out; }
 function correctedRequest(answer) {
@@ -215,133 +260,102 @@ function correctedRequest(answer) {
 }
 function renderQuestions() {
   const box = $("questions");
-  if (!S.questions.length) { box.hidden = true; box.innerHTML = ""; return; }
-  box.innerHTML = "<div class=\"card\" style=\"border-color:#8a6d00;background:#fff8e1\"><strong>Quick question before you approve</strong>" +
-    S.questions.map((q) => "<p>" + esc(q) + "</p>").join("") +
-    "<div class=\"row\"><input id=\"question-answer\" type=\"text\" placeholder=\"Type your answer\" style=\"flex:1;min-height:2.9rem\"><button id=\"question-send\" type=\"button\" class=\"primary\" style=\"width:auto\">Send answer</button>" +
-    "<button id=\"question-discard\" type=\"button\">Discard this proposal</button></div>" +
-    "<p class=\"hint\">Team, field, date and time answers correct your request in place; extra requests are added. Nothing is saved until you approve.</p></div>";
-  box.hidden = false;
+  if (!S.questions.length) { box.innerHTML = ""; return; }
+  box.innerHTML = "<div class=\"ask\"><strong>The assistant needs an answer first</strong>" + S.questions.map((q) => "<p>" + esc(q) + "</p>").join("") +
+    "<div class=\"row\"><input id=\"question-answer\" type=\"text\" placeholder=\"Your answer\" style=\"flex:1;min-height:2.8rem;font:inherit;padding:0 0.5rem\"><button id=\"question-send\" type=\"button\">Send</button></div></div>";
   $("question-send").addEventListener("click", () => { const a = $("question-answer").value.trim(); if (!a) return; $("request").value = correctedRequest(a); run("run"); });
-  $("question-discard").addEventListener("click", () => { S.proposal = null; S.events = []; S.diff = null; S.questions = []; box.hidden = true; $("summary").textContent = "Proposal discarded. Your current schedule in Plan is unchanged."; renderDiff(); syncButtons(); });
 }
-function renderClarify(c) {
-  const box = $("clarify"); S.clarification = c || null;
-  if (!c) { box.hidden = true; box.innerHTML = ""; return; }
-  const taken = (c.blockers || []).map((b) => "<li>" + esc(b.title) + " — " + esc(b.when) + " at " + esc(b.field) + "</li>").join("");
-  box.innerHTML = "<div class=\"card\" style=\"border-color:#8a6d00;background:#fff8e1\"><strong>Quick question before you approve</strong>" +
-    "<p>" + esc(c.question) + "</p>" + (taken ? "<p>Already scheduled then:</p><ul>" + taken + "</ul>" : "") +
-    "<div class=\"row\"><button id=\"clarify-keep\" type=\"button\" class=\"primary\" style=\"width:auto\">Keep the session already at " + esc(c.requested_time) + " and add this one at " + esc(c.placed_time) + "</button></div>" +
-    "<div class=\"row\"><button id=\"clarify-change\" type=\"button\">I want other changes — write them for me below</button>" +
-    "<button id=\"clarify-discard\" type=\"button\">Don&apos;t add it — discard this proposal</button></div>" +
-    "<p class=\"hint\">Nothing is saved until you approve, so you can still change your mind.</p></div>";
-  box.hidden = false;
-  $("clarify-keep").addEventListener("click", () => { box.hidden = true; $("approve-btn").scrollIntoView({ block: "center" }); });
-  $("clarify-change").addEventListener("click", () => {
-    const b = (c.blockers || [])[0];
-    $("request").value = b ? ("Move " + b.title + " on " + c.date + " (" + b.when + ", " + b.field + ") to a free time, and keep the new " + c.team + " practice at " + c.placed_time + ".") : ("Change the " + c.team + " practice on " + c.date + " — instead of " + c.placed_time + ", please: ");
-    box.hidden = true; document.getElementById("plan").scrollIntoView({ block: "start" }); $("request").focus();
-  });
-  $("clarify-discard").addEventListener("click", () => { S.proposal = null; S.events = []; S.diff = null; box.hidden = true; $("summary").textContent = "Proposal discarded. Your current schedule in Plan is unchanged."; renderDiff(); $("calendar").textContent = "—"; $("checks").textContent = "—"; $("shortfalls").textContent = "—"; $("shortfalls").classList.remove("alert-red"); syncButtons(); });
+
+/* ---------- buttons ---------- */
+function syncButtons() {
+  const p = S.proposal, failed = p ? p.check_results.filter((c) => !c.passed).length : 0, open = S.questions.length;
+  $("approve-btn").disabled = S.busy || !p || failed > 0 || open > 0 || S.approved;
+  $("approve-hint").textContent = !p ? "Plan or run something first." : S.approved ? "Approved." : open ? "Answer the question above first." : failed ? "Fix the conflicts above first." : (S.base.length ? "Everything checks out. Approve to make it the club's schedule." : "Check the weekly pattern above. If it is right, approve it as the club's schedule.");
+  $("plan-hint").textContent = S.current.length || S.events.length ? "Starts the season over from the club's rules. Your changes so far will be replaced." : "Builds every team's weekly practices from the club's rules.";
 }
-function renderCurrent() {
-  const box = $("current-calendar");
-  if (!S.current.length) { box.textContent = "No saved schedule yet."; return; }
-  const days = S.current.map((e) => e.starts_at.slice(0, 10)).sort();
-  box.innerHTML = "<p><strong>" + S.current.length + " sessions</strong> · " + esc(days[0]) + " to " + esc(days[days.length - 1]) + " · " + ((S.club || {}).teams || []).length + " teams · " + (((S.club || {}).coaches || []).length) + " coaches</p>" +
-    "<div class=\"row\"><button id=\"expand-current\" type=\"button\">Expand all sessions</button><button id=\"minimize-current\" type=\"button\">Minimize sessions</button></div>" +
-    "<p class=\"hint\">Sessions are grouped by week and start minimized. Tap a week to expand it.</p>" + weeksHtml(S.current, null);
-  $("expand-current").addEventListener("click", () => setWeeks(box, true));
-  $("minimize-current").addEventListener("click", () => setWeeks(box, false));
-}
-function renderDiff() {
-  const box = $("diff"); if (!S.diff) { box.textContent = "No proposal yet."; return; }
-  const d = S.diff;
-  let html = "<p><strong>" + d.unchanged.length + " unchanged · " + d.moved.length + " moving · " + d.cancelled.length + " to cancel · " + d.added.length + " new.</strong> Nothing is saved until you approve.</p>";
-  if (d.cancelled.length) html += "<h4>Will be cancelled (red)</h4><table><tr><th>Session to remove</th></tr>" + d.cancelled.map((e) => "<tr class=\"cancelled\"><td>" + esc(fmt(e)) + "</td></tr>").join("") + "</table>";
-  if (d.moved.length) html += "<h4>Will move / change (red)</h4><table><tr><th>Now</th><th>Will become</th></tr>" + d.moved.map((m) => "<tr class=\"changed\"><td>" + esc(fmt(m.before)) + "</td><td><strong>" + esc(fmt(m.after)) + "</strong></td></tr>").join("") + "</table>";
-  if (d.added.length) html += "<h4>Will be added (red)</h4><table><tr><th>New session</th></tr>" + d.added.map((e) => "<tr class=\"changed\"><td>" + esc(fmt(e)) + "</td></tr>").join("") + "</table>";
-  if (!d.cancelled.length && !d.moved.length && !d.added.length) html += "<p>No time or field changes. The proposal matches the current schedule.</p>";
-  box.innerHTML = html; box.classList.remove("muted");
-}
-function renderCalendar() {
-  const box = $("calendar"); if (!S.events.length) { box.textContent = "—"; return; }
-  const bad = failedIndexes(S.proposal || { check_results: [] });
-  const changedKeys = new Set(); if (S.diff) { S.diff.moved.forEach((m) => changedKeys.add(key(m.after))); S.diff.added.forEach((e) => changedKeys.add(key(e))); }
-  box.innerHTML = "<p class=\"hint\">Weeks with red changes open automatically. Others start minimized.</p>" + weeksHtml(S.events, (e, i) => bad.has(i) ? "conflict" : (changedKeys.has(key(e)) ? "changed" : ""));
-}
-function renderChecks(p) {
-  const total = p.check_results.length, passed = p.check_results.filter((c) => c.passed).length;
-  let html = "<p>" + passed + "/" + total + " checks passed." + (passed < total ? " <span class=\"chip bad\">Conflicts in red — fix them before approving.</span>" : " <span class=\"chip ok\">No conflicts.</span>") + "</p>";
-  const badOnly = p.events.map((e, i) => [e, i]).filter(([e, i]) => p.check_results.some((c) => c.event_index === i && !c.passed));
-  if (badOnly.length) html += badOnly.map(([e, i]) => "<p class=\"conflict\"><strong>" + esc(e.title || e.event_type) + "</strong> " + esc(e.starts_at.slice(0, 16)) + "<br>" + p.check_results.filter((c) => c.event_index === i && !c.passed).map((c) => "<span class=\"chip bad\">" + esc(c.check) + ": " + esc(c.reason) + "</span>").join("") + "</p>").join("");
-  else if (p.events.length) html += "<p class=\"muted\">Every session passed every check. Open the agent steps below if you want the full detail.</p>";
-  $("checks").innerHTML = html;
-}
-function renderShortfalls(p) {
-  const box = $("shortfalls");
-  const failed = (p.check_results || []).filter((c) => !c.passed).length;
-  if (p.shortfalls.length) {
-    box.innerHTML = "<p><span class=\"chip bad\">Conflict — could not be placed</span></p><ul>" + p.shortfalls.map((s) => "<li>" + esc(teamName(s.team_id)) + " " + esc(s.event_type) + ": " + esc(s.reason) + "</li>").join("") + "</ul>" + (failed ? "<p>" + failed + " check(s) also failed — see Checks at the bottom of Review.</p>" : "");
-    box.classList.add("alert-red"); box.classList.remove("muted");
-  } else if (failed) {
-    box.innerHTML = "<p><span class=\"chip bad\">Conflict</span> " + failed + " check(s) failed — see Checks at the bottom of Review.</p>";
-    box.classList.add("alert-red"); box.classList.remove("muted");
-  } else {
-    box.innerHTML = "None — everything asked for was placed.";
-    box.classList.remove("alert-red");
-  }
-}
-function syncButtons() { const failed = S.proposal ? S.proposal.check_results.filter((c) => !c.passed).length : 1; const openQ = S.proposal ? (S.proposal.questions || []).length + (S.questions || []).length : 0; $("approve-btn").disabled = !S.proposal || failed > 0 || openQ > 0; $("notices-btn").disabled = !S.approved; }
-function paintSteps(steps) { $("trace").textContent = steps.length ? steps.join("\n") : "Working…"; }
-const RUN_BUTTONS = ["run-btn"];
 function setBusy(on, stage) {
   S.busy = on; $("working").hidden = !on;
   if (stage) $("working-text").textContent = stage;
-  const btn = $("run-btn");
-  if (on) { if (!btn.dataset.label) btn.dataset.label = btn.textContent; btn.textContent = "Working… creating your schedule, please wait"; }
-  else if (btn.dataset.label) btn.textContent = btn.dataset.label;
-  RUN_BUTTONS.forEach((id) => { const b = $(id); if (b) b.disabled = on; });
-  if (!on) syncButtons();
+  ["plan-btn", "run-btn", "record-btn"].forEach((id) => { $(id).disabled = on; });
+  if (!on) $("record-btn").disabled = S.mode === "mock";
+  syncButtons();
 }
 async function runStream(kind, payload) {
   const r = await fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ mode: S.mode, call: kind }, payload)) });
-  if (!r.body) {
-    let j; if (kind === "plan") j = await post("/api/plan", payload); if (kind === "revise") j = await post("/api/revise", payload);
-    if (kind === "reschedule") j = await post("/api/reschedule", payload); if (kind === "cancel") j = await post("/api/cancel", payload); if (kind === "run") j = await post("/api/run", payload);
-    showProposal(j.proposal, j.trace, j.clarification, j); return;
-  }
+  if (!r.body) { const j = await post(kind === "plan" ? "/api/plan" : "/api/run", payload); showProposal(j.proposal, j.trace, j.clarification, j); return; }
   if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error((j && j.detail) || ("Request failed (" + r.status + ")")); }
-  const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ""; const steps = []; paintSteps(steps);
+  const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ""; const calls = [];
   for (;;) { const { done, value } = await reader.read(); if (done) break; buf += dec.decode(value, { stream: true }); let idx;
     while ((idx = buf.indexOf("\n\n")) >= 0) { const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
       for (const line of frame.split("\n")) { if (!line.startsWith("data:")) continue; const evt = JSON.parse(line.slice(5));
-        if (evt.type === "step") { if (evt.phase === "start") { steps.push("… " + evt.label); setBusy(true, "Working… " + evt.label + " — please wait, do not press the button again."); } else { steps[steps.length - 1] = "✓ " + evt.label + " — " + (evt.latency_ms / 1000).toFixed(1) + "s"; setBusy(true, "Working… " + evt.label + " done. Finishing your schedule…"); } paintSteps(steps); }
-        else if (evt.type === "result") { showProposal(evt.proposal, evt.trace, evt.clarification, evt); return; } else if (evt.type === "error") throw new Error(evt.detail || "Request failed"); } } }
+        if (evt.type === "step" && evt.phase === "start") setBusy(true, evt.label + "… please wait.");
+        else if (evt.type === "step" && evt.phase === "done") calls.push(evt.label + " " + (evt.latency_ms / 1000).toFixed(1) + " s");
+        else if (evt.type === "result") { showProposal(evt.proposal, evt.trace, evt.clarification, evt); showModel(calls); return; }
+        else if (evt.type === "error") throw new Error(evt.detail || "Request failed"); } } }
   throw new Error("The stream ended without a result.");
 }
-async function run(kind) {
+// Who did what: the model reads and explains; code places the times and checks them.
+function showModel(calls) {
+  const who = { meta: "Meta API", open: "Muse Spark (open weights)", mock: "Mock (offline, scripted)" }[S.mode] || S.mode;
+  $("by-model").textContent = (calls.length ? who + ": " + calls.join(" · ") + ". " : "No model call was needed. ") +
+    "Times were placed by the solver and checked in code, never by the model.";
+}
+async function planSeason() {
   if (S.busy) return;
-  clearFail(); setBusy(true, "Working… your request is being processed. Please wait — do not press the button again.");
-  const request = $("request").value; S.lastRequest = request; const calendar = S.events.length ? S.events : S.current;
+  clearFail(); setBusy(true, "Planning the season… please wait.");
+  try { S.events = []; S.proposal = null; await runStream("plan", { request: S.club.presets.plan_request, extra_busy: S.extraBusy }); $("plan-box").open = false; }
+  catch (err) { fail(err.message); } finally { setBusy(false); }
+}
+async function run() {
+  if (S.busy) return;
+  const mock = S.mode === "mock", pick = $("mock-request").value;
+  const request = mock ? (pick === "games" ? "" : pick) : $("request").value.trim();
+  if (!mock && !request && !S.ingested) { fail("Type, say or attach what you need first."); return; }
+  if (mock && !S.events.length && !S.current.length) { fail("Press “Plan the season” first — the ready-made requests change that schedule."); return; }
+  clearFail(); setBusy(true, "Working on your request… please wait.");
+  S.lastRequest = request; const calendar = S.events.length ? S.events : S.current;
   try {
-    const payload = { request, games: S.games, ingested: S.ingested, extra_busy: S.extraBusy };
-    if (S.proposal) payload.proposal = S.proposal;
+    const payload = { request, ingested: S.ingested, extra_busy: S.extraBusy };
+    if (mock && pick === "games") payload.games = mockGames();
+    if (S.proposal && !S.approved) payload.proposal = S.proposal;
     if (calendar.length) payload.events = calendar;
-    await runStream(kind, payload);
+    await runStream("run", payload);
+    S.ingested = null; S.extraBusy = []; $("ingest-files").value = ""; $("input-status").textContent = "";
   } catch (err) { fail(err.message); } finally { setBusy(false); }
 }
+// Families hear only what changed since the last approval (a new season is announced in full).
+function noticeEvents() {
+  if (!S.base.length) return S.events;
+  const d = S.diff;
+  return [
+    ...d.added,
+    ...d.moved.map((m) => Object.assign({}, m.after, { title: (m.after.title || teamName(m.after.team_id) + " " + m.after.event_type) + " (moved from " + when(m.before) + ", " + fieldName(m.before.field_id) + ")" })),
+    ...d.cancelled.map((e) => Object.assign({}, e, { title: "CANCELLED: " + (e.title || teamName(e.team_id) + " " + e.event_type) })),
+  ];
+}
 async function approve() {
-  clearFail(); try { if (!S.proposal) throw new Error("Nothing to approve yet."); const j = await post("/api/approve", { proposal: S.proposal }); S.approved = true; S.current = S.events.slice(); renderCurrent(); syncButtons(); $("approval").textContent = j.result.message + " Current schedule in Plan is now the approved one. (The demo saves nothing itself — a host club system would save now.)"; $("approval").scrollIntoView({ block: "center" }); } catch (err) { fail(err.message); }
+  clearFail();
+  try {
+    await post("/api/approve", { proposal: S.proposal });
+    const changed = noticeEvents();
+    S.approved = true; S.current = S.events.slice(); syncButtons();
+    $("approval").innerHTML = "<p class=\"ok\">✓ Approved. " + S.events.length + " sessions are now the club's schedule.</p>";
+    if (!changed.length) { $("notices").innerHTML = "<p class=\"muted\">Nothing changed for families, so no notice is needed.</p>"; return; }
+    const teams = [...new Set(changed.map((e) => teamName(e.team_id)))];
+    $("notices").innerHTML = "<p class=\"muted\">Drafting family notices…</p>";
+    const n = await post("/api/notices", { events: changed });
+    const LANG = { en: "English", es: "Spanish", fr: "French", vi: "Vietnamese" };
+    $("notices").innerHTML = "<p><strong>Family notices drafted</strong> for " + esc(teams.join(", ")) + " families" + (S.base.length ? " (only the teams affected)" : "") + ", one per language. Tap one to read it.</p>" + n.notices.notices.map((x) => "<details><summary>" + esc(LANG[x.language] || x.language) + (x.verified ? " ✓" : " — check: missing " + esc(x.missing.join(", "))) + "</summary><p>" + esc(x.text) + "</p></details>").join("");
+  } catch (err) { fail(err.message); }
 }
-async function notices() {
-  clearFail(); try { if (!S.approved) throw new Error("Approve the proposal first — notices draft from approved sessions."); const j = await post("/api/notices", { events: S.events }); $("notices").innerHTML = j.notices.notices.map((n) => "<div class=\"notice\"><strong>" + esc(n.language) + "</strong> " + (n.verified ? "<span class=\"chip ok\">verified</span>" : "<span class=\"chip bad\">missing: " + esc(n.missing.join(", ")) + "</span>") + "<p>" + esc(n.text) + "</p></div>").join("") + (j.notices.notes.length ? "<p class=\"muted\">Notes: " + esc(j.notices.notes.join(" ")) + "</p>" : ""); } catch (err) { fail(err.message); }
-}
+
+/* ---------- inputs: voice and files fill the same request ---------- */
 async function transcribeBlob(blob, filename) {
   const fd = new FormData(); fd.append("mode", S.mode); fd.append("audio", blob, filename);
   const r = await fetch("/api/voice", { method: "POST", body: fd }); const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.detail || "Transcription failed.");
-  $("request").value = j.transcript; if (j.mock) fail("Mock mode: sample words loaded in the box in Plan — press the green button to run them.");
+  $("request").value = j.transcript;
+  $("input-status").textContent = j.mock ? "Mock: sample words loaded." : "Your words are in the box.";
 }
 let recordCtx = null, recordSource = null, recordProc = null, recordChunks = [], recordStream = null, recordRate = 44100;
 function toWav16k(chunks, inRate) {
@@ -364,43 +378,36 @@ function toWav16k(chunks, inRate) {
   }
   return new Blob([buf], { type: "audio/wav" });
 }
-async function startRecording() {
+async function toggleRecording() {
   clearFail();
+  const btn = $("record-btn");
   try {
-    if (!navigator.mediaDevices || !(window.AudioContext || window.webkitAudioContext)) throw new Error("This browser cannot record here — attach an audio file instead.");
-    recordStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    recordCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (recordCtx.state === "suspended") await recordCtx.resume();
-    recordRate = recordCtx.sampleRate; recordChunks = [];
-    recordSource = recordCtx.createMediaStreamSource(recordStream);
-    recordProc = recordCtx.createScriptProcessor(4096, 1, 1);
-    recordProc.onaudioprocess = (e) => recordChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-    recordSource.connect(recordProc); recordProc.connect(recordCtx.destination);
-    $("record-btn").disabled = true; $("record-stop").disabled = false; $("record-status").textContent = "Recording… speak now, then Stop.";
-  } catch (err) { fail(err.message); }
-}
-async function stopRecording() {
-  if (!recordCtx) return;
-  try {
+    if (!recordCtx) {
+      if (!navigator.mediaDevices || !(window.AudioContext || window.webkitAudioContext)) throw new Error("This browser cannot record here — attach an audio file instead.");
+      recordStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (recordCtx.state === "suspended") await recordCtx.resume();
+      recordRate = recordCtx.sampleRate; recordChunks = [];
+      recordSource = recordCtx.createMediaStreamSource(recordStream);
+      recordProc = recordCtx.createScriptProcessor(4096, 1, 1);
+      recordProc.onaudioprocess = (e) => recordChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      recordSource.connect(recordProc); recordProc.connect(recordCtx.destination);
+      btn.textContent = "■ Stop"; $("input-status").textContent = "Listening… press Stop when done.";
+      return;
+    }
     recordProc.disconnect(); recordSource.disconnect();
     recordStream.getTracks().forEach((t) => t.stop());
     const wav = toWav16k(recordChunks, recordRate);
     await recordCtx.close(); recordCtx = null;
-    $("record-btn").disabled = false; $("record-stop").disabled = true;
+    btn.textContent = "🎤 Speak"; $("input-status").textContent = "Turning your voice into words…";
     await transcribeBlob(wav, "voice-note.wav");
-    $("record-status").textContent = "Words are in the box above — press the green button.";
-  } catch (err) { fail(err.message); }
+  } catch (err) { recordCtx = null; btn.textContent = "🎤 Speak"; $("input-status").textContent = ""; fail(err.message); }
 }
 async function readFiles() {
   clearFail();
-  const btn = $("ingest-btn"), out = $("ingest-result");
-  if (btn.disabled) return;
-  const list = Array.from($("ingest-files").files || []);
-  if (!list.length) { out.innerHTML = "<p class=\"hint\">Choose at least one file first (the box left of this button), then press it again.</p>"; return; }
-  // Live modes make model calls per file; show progress so the click is never silent.
-  btn.disabled = true; const label = btn.textContent; btn.textContent = "Reading…";
-  out.innerHTML = "<p role=\"status\"><span class=\"spinner\" aria-hidden=\"true\" style=\"display:inline-block;vertical-align:middle\"></span> Reading " + list.length + " file(s)… " +
-    (S.mode === "mock" ? "" : "the assistant reads each table or photo, this can take up to a minute.") + "</p>";
+  const list = Array.from($("ingest-files").files || []); if (!list.length) return;
+  const status = $("input-status");
+  status.textContent = "Reading " + list.map((f) => f.name).join(", ") + "…"; $("run-btn").disabled = true;
   try {
     const fd = new FormData(); fd.append("mode", S.mode); fd.append("text", $("request").value);
     list.forEach((f) => fd.append("files", f));
@@ -408,45 +415,25 @@ async function readFiles() {
     if (!r.ok) throw new Error(j.detail || "Could not read those files.");
     S.ingested = j.ingested; S.extraBusy = j.busy || [];
     if (j.ingested.text) $("request").value = j.ingested.text;
-    const g = j.ingested.games.games.length, gr = j.ingested.availability.grounds.length, c = j.ingested.availability.coach.length;
-    out.innerHTML = "<p><strong>Read " + list.length + " file(s):</strong> " + g + " game(s), " + gr + " ground row(s), " + c + " coach window(s) · " + j.busy_count + " blocked times will apply.</p>" +
-      (j.ingested.text ? "" : "<p class=\"muted\">No request words in these files, so the box is unchanged — the tables were read and will be used with whatever you type.</p>") +
-      (j.ingested.notes.length ? "<p class=\"muted\">" + esc(j.ingested.notes.join(" ")) + "</p>" : "") +
-      (j.mock ? "<p class=\"muted\">" + esc(j.note) + "</p>" : "") +
-      "<p class=\"hint\">Now press the green button in Plan. Unmatched rows were kept and reported, never guessed.</p>";
-  } catch (err) { out.innerHTML = ""; fail(err.message); }
-  finally { btn.disabled = false; btn.textContent = label; }
+    const g = j.ingested.games.games.length, gr = j.ingested.availability.grounds.length + j.ingested.availability.coach.length;
+    const parts = []; if (g) parts.push(g + " game" + (g === 1 ? "" : "s")); if (gr) parts.push(gr + " availability row" + (gr === 1 ? "" : "s"));
+    status.textContent = "Read: " + (parts.join(", ") || "no schedule rows") + ". Press Run." + (j.mock ? " (Mock: sample rows)" : "");
+  } catch (err) { status.textContent = ""; $("ingest-files").value = ""; fail(err.message); }
+  finally { $("run-btn").disabled = S.busy; }
 }
-async function loadCalendar() { const r = await fetch("/api/calendar"); const j = await r.json(); S.current = j.events || []; S.events = []; S.proposal = null; S.diff = null; renderCurrent(); $("diff").textContent = "No proposal yet. Write a request in Plan and press the green button — every move and cancellation appears here in red."; syncButtons(); }
-/* Single-photo endpoints (/api/vision, /api/availability) remain available for hosts; the demo now reads everything through /api/ingest. */
-function initTabs() {
-  const links = Array.from(document.querySelectorAll("nav.tabs a"));
-  const setActive = (id) => links.forEach((a) => a.classList.toggle("active", a.dataset.tab === id));
-  links.forEach((a) => a.addEventListener("click", () => setActive(a.dataset.tab)));
-  const obs = new IntersectionObserver((entries) => { entries.forEach((en) => { if (en.isIntersecting) setActive(en.target.id); }); }, { rootMargin: "-30% 0px -60% 0px" });
-  ["plan", "review", "approve"].forEach((id) => obs.observe(document.getElementById(id)));
-}
+
 async function init() {
-  const r = await fetch("/api/club"); S.club = await r.json(); $("club").textContent = S.club.club + " — Schedule Agent demo";
-  $("club-sub").textContent = "Season " + S.club.season_start + " to " + S.club.season_end + " (" + S.club.timezone + "). Scheduling runs to " + (S.club.scheduling_end || S.club.season_end) + ". Grounds stay open in December — no sessions are scheduled there. Use the tabs above: Plan, then Review, then Approve.";
-  $("club-facts").textContent = S.club.teams.length + " teams: " + S.club.teams.map((t) => t.name).join(", ") + " · " + (S.club.coaches || []).length + " coaches, back-to-back pairs: " + (S.club.coaches || []).map((c) => c.label + " (" + c.back_to_back.map((p) => p.join(" → ")).join("; ") + ")").join(" · ") + " · " + S.club.fields.length + " fields: " + S.club.fields.map((f) => f.name + " " + f.open_from + "–" + f.open_until).join(", ") + " · " + S.club.coach_note;
-  await loadCalendar(); initTabs();
-  // Prefer the real assistant when a key exists; Mock only when offline.
+  const r = await fetch("/api/club"); S.club = await r.json(); $("club").textContent = S.club.club + " — Schedule Agent";
+  renderPlanPreview(); renderExpected();
   const modes = S.club.modes || {};
   S.mode = modes.meta ? "meta" : (modes.open ? "open" : "mock");
-  $("mode").value = S.mode;
-  $("mode").addEventListener("change", (e) => { S.mode = e.target.value; setModeNote(); }); setModeNote();
-  $("preset-plan").addEventListener("click", () => { $("request").value = S.club.presets.plan_request; $("request").focus(); });
-  $("preset-rain").addEventListener("click", () => { $("request").value = S.club.presets.rain_request; $("request").focus(); });
-  $("preset-cancel").addEventListener("click", () => { $("request").value = S.club.presets.cancel_request; $("request").focus(); });
-  $("run-btn").addEventListener("click", () => run("run"));
-  $("reset-btn").addEventListener("click", () => loadCalendar().catch((e) => fail(e.message)));
-  $("expand-proposed").addEventListener("click", () => setWeeks($("calendar"), true));
-  $("minimize-proposed").addEventListener("click", () => setWeeks($("calendar"), false));
-  $("approve-btn").addEventListener("click", approve); $("notices-btn").addEventListener("click", notices);
-  $("ingest-btn").addEventListener("click", readFiles);
-  $("ingest-files").addEventListener("change", () => { if ($("ingest-files").files.length) readFiles(); });
-  $("record-btn").addEventListener("click", startRecording); $("record-stop").addEventListener("click", stopRecording);
+  $("mode").value = S.mode; setModeNote();
+  $("mode").addEventListener("change", (e) => { S.mode = e.target.value; setModeNote(); });
+  $("plan-btn").addEventListener("click", planSeason);
+  $("run-btn").addEventListener("click", () => run());
+  $("approve-btn").addEventListener("click", approve);
+  $("record-btn").addEventListener("click", toggleRecording);
+  $("ingest-files").addEventListener("change", readFiles);
   syncButtons();
 }
 init().catch((e) => fail(e.message));

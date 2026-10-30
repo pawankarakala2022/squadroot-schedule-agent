@@ -1,5 +1,24 @@
 # Changelog
 
+## v6.3.1 (2026-10-30)
+
+Bug fix, no interface change: a weekly change limited to a period no
+longer spreads over the whole season.
+
+- `create_recurring` honours a period: the target's `date_from` /
+  `date_to` bound the weekly sessions ("every Monday in December"), and
+  a placement `date` is where they start. Previously both were dropped
+  and the sessions filled every week of the season.
+- A date outside the season is never silently dropped from a change:
+  the change is held back and `Proposal.questions` asks which dates
+  were meant (approval stays blocked until answered).
+- A new weekly session landing on a day the team already trains adds a
+  question before approval instead of stacking a second session.
+- Demo: "Plan the season" still fills November, but every other call
+  may use the whole season through December (no December blackout);
+  the plan's rules keep their November end date so revising the draft
+  stays in November.
+
 ## v6.3.0 (2026-10-30)
 
 Additive, backward compatible: uploaded league games now work on a

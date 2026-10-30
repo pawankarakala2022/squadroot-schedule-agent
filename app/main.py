@@ -142,8 +142,8 @@ def _mock_req(alias: str, day: int, field_alias: str) -> dict:
     }
 
 
-# Four teams, two coaches, scheduling in November only (December stays
-# open but unscheduled; see scheduling_end in demo/club.json). Paired teams share a day and
+# Four teams, two coaches. "Plan the season" fills November (scheduling_end
+# in demo/club.json); changes may use the whole season through December. Paired teams share a day and
 # field, so the solver's earliest-first search places each pair
 # back-to-back (17:00 then 18:00, same field, same coach): Coach 1 on
 # Mondays, Coach 2 on Thursdays, both on North Field.
@@ -689,29 +689,17 @@ def _coach_busy() -> list[Busy]:
 
 
 def _scheduling_end() -> date:
-    """Last date the solver may place on (displayed season may run later)."""
+    """Last date "Plan the season" fills; later changes may use the whole season."""
     return date.fromisoformat(CLUB.get("scheduling_end") or CLUB["season_end"])
 
 
-def _unscheduled_dates() -> list[date]:
-    """Displayed-season dates after scheduling_end: grounds open, no sessions.
+def club_problem(extra_busy: list[Busy] | None = None, *, plan_window: bool = False) -> Problem:
+    """Rebuild the demo Problem from demo/club.json plus optional game busy.
 
-    Returned as blackout dates so nothing is ever placed there (a late
-    reschedule search crossing into December is blocked too), while the
-    fields keep their normal open hours. The solver's own season ends
-    at scheduling_end, so these dates produce no shortfalls.
+    ``plan_window`` ends the season at scheduling_end for "Plan the season"
+    (the first plan fills November); every other call gets the whole season,
+    so a change such as "every Monday in December" can be placed.
     """
-    day = _scheduling_end() + timedelta(days=1)
-    last = date.fromisoformat(CLUB["season_end"])
-    out: list[date] = []
-    while day <= last:
-        out.append(day)
-        day += timedelta(days=1)
-    return out
-
-
-def club_problem(extra_busy: list[Busy] | None = None) -> Problem:
-    """Rebuild the demo Problem from demo/club.json plus optional game busy."""
     return Problem(
         teams=[Team(id=t["id"], name=t["name"]) for t in CLUB["teams"]],
         fields=[
@@ -724,10 +712,9 @@ def club_problem(extra_busy: list[Busy] | None = None) -> Problem:
             for f in CLUB["fields"]
         ],
         season_start=date.fromisoformat(CLUB["season_start"]),
-        season_end=_scheduling_end(),
+        season_end=_scheduling_end() if plan_window else date.fromisoformat(CLUB["season_end"]),
         timezone=TZ,
         busy=_coach_busy() + list(extra_busy or []),
-        blackout_dates=_unscheduled_dates(),
     )
 
 
@@ -886,6 +873,12 @@ def run_agent(mode: str, call: str, _chat: ChatFn | None = None, **kwargs):  # t
                                     selected_session_ids=kwargs.get("selected_session_ids"), language=language)
         else:
             raise HTTPException(400, f"Unknown call {call!r}.")
+        if call == "plan" and problem.season_end < date.fromisoformat(CLUB["season_end"]):
+            # A plan made for the November window keeps that window in its rules, so a
+            # later revise of the draft over the whole season stays in November.
+            for req in proposal.rules.requirements:
+                if req.active_until is None:
+                    req.active_until = problem.season_end
     except HTTPException:
         raise
     except Exception as exc:
@@ -942,7 +935,7 @@ def get_club() -> dict:
 
 def demo_calendar() -> dict:
     """Deterministic sample calendar for the demo season (mock plan, no key)."""
-    problem = club_problem()
+    problem = club_problem(plan_window=True)
     agent = ScheduleAgent(mock_chat, deterministic_summary=True)
     proposal = agent.plan(problem, CLUB["presets"]["plan_request"], verify=mock_verify_hook(problem))
     from schedule_agent import session_key as _session_key
@@ -965,7 +958,7 @@ def get_calendar() -> dict:
     return demo_calendar()
 
 
-def _problem_with_games(body: dict) -> tuple[Problem, list[Busy]]:
+def _problem_with_games(body: dict, *, plan_window: bool = False) -> tuple[Problem, list[Busy]]:
     """Base club problem plus the game busy ``body['games']`` would create.
 
     The agent receives the games themselves (as fixed game events), so
@@ -976,7 +969,7 @@ def _problem_with_games(body: dict) -> tuple[Problem, list[Busy]]:
     events for the agent.
     """
     extra = [Busy.from_dict(b) for b in body.get("extra_busy", [])]
-    problem = club_problem(extra)
+    problem = club_problem(extra, plan_window=plan_window)
     games = body.get("games")
     ingested = body.get("ingested")
     if ingested:
@@ -1018,7 +1011,7 @@ def _request_with_games_default(body: dict, game_busy: list[Busy]) -> str:
 @app.post("/api/plan")
 def api_plan(body: dict) -> dict:
     """Plan a draft from a request; extra_busy adds host-known busy; games adds league games."""
-    problem, game_busy = _problem_with_games(body)
+    problem, game_busy = _problem_with_games(body, plan_window=True)
     return run_agent(body.get("mode", "mock"), "plan", problem=problem,
                      request=_request_with_games_default(body, game_busy), previous=body.get("previous"),
                      games=_effective_games(body), language=_request_language(body))
@@ -1102,7 +1095,7 @@ def _stream_label(response_format: object) -> str:
 def _stream_kwargs(call: str, body: dict) -> dict:
     """run_agent kwargs for a stream call; mirrors the /api/plan|revise|reschedule|cancel|run bodies."""
     if call == "plan":
-        problem, game_busy = _problem_with_games(body)
+        problem, game_busy = _problem_with_games(body, plan_window=True)
         return {"problem": problem, "request": _request_with_games_default(body, game_busy),
                 "previous": body.get("previous"), "games": _effective_games(body), "language": _request_language(body)}
     if call == "revise":

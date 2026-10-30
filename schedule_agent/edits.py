@@ -679,6 +679,8 @@ def _prompt(
         "change_rule (change a draft rule such as sessions per week or field).",
         "Every set target field must match; a move/cancel target must set at least one of session_labels, team_aliases, "
         "field_aliases, weekdays, date_from, date_to, event_types. Never use an empty target to mean all sessions.",
+        "A create_recurring limited to a period ('every Monday in December', 'from Nov 10 to Dec 5') puts the team in "
+        "target team_aliases and the period in target date_from/date_to; the weekday goes in to.weekdays.",
         "Placement: date/start_time/field_alias/weekdays/earliest_start/latest_end; empty string or list means unset. "
         "exactness is exact when the manager names an exact date and time ('Friday 6pm', 'Tuesday at 6pm'), "
         "preferred when a time is liked but not fixed, otherwise any.",
@@ -842,6 +844,7 @@ def _clean_plan(
     if not isinstance(raw_ops, list):
         return None, ["'ops' was not a list."]
     ops: list[EditOp] = []
+    pending_questions: list[str] = []
     for raw in raw_ops:
         if not isinstance(raw, dict):
             issues.append("An op was not an object; it was dropped.")
@@ -851,8 +854,19 @@ def _clean_plan(
             issues.append(f"Bad action {action!r}.")
             continue
         action = action.strip()
+        seen_notes = len(notes)
         target = _clean_target(raw.get("target"), teams, fields, labels, problem, notes)
         to = _clean_placement(raw.get("to"), fields, problem, notes)
+        outside = [n for n in notes[seen_notes:] if "outside the season" in n]
+        if outside:
+            # A dropped date must never widen a change ("every Monday in December"
+            # becoming every Monday of the season): ask instead of applying it.
+            q = (f"{outside[0].split(' is outside')[0].split()[-1]} is outside the season "
+                 f"({problem.season_start.isoformat()} to {problem.season_end.isoformat()}), so that change "
+                 "was not made. Which dates inside the season did you mean?")
+            if q not in pending_questions:
+                pending_questions.append(q)
+            continue
         team_id = None
         alias = raw.get("team_alias", "")
         if isinstance(alias, str) and alias.strip():
@@ -897,6 +911,7 @@ def _clean_plan(
             duration_minutes=duration, sessions_per_week=sessions, title=title, notes=op_notes,
         ))
     questions = [str(q) for q in data.get("questions", []) if str(q).strip()] if isinstance(data.get("questions", []), list) else []
+    questions.extend(q for q in pending_questions if q not in questions)
     model_notes = data.get("notes", [])
     if isinstance(model_notes, list):
         notes.extend(str(n) for n in model_notes)
