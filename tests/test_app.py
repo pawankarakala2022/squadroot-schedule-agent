@@ -199,13 +199,13 @@ def test_add_accepts_when_ground_reports_unavailable() -> None:
 
 
 def test_add_at_taken_time_asks_before_adding() -> None:
-    """Badgers Thu 5pm is taken, so an 18:00 placement must ask, not silently add."""
-    from datetime import datetime, time as dtime
+    """Badgers Thu 5pm is taken, so an 18:00 placement must ask (library questions)."""
+    from datetime import date as ddate, datetime, time as dtime
     from zoneinfo import ZoneInfo
 
-    from schedule_agent import Proposal, ProposedEvent, Requirement, Rules
+    from schedule_agent import EditOp, EditPlan, Placement, ProposedEvent, build_edit_proposal
 
-    from app.main import _add_clarification, club_problem
+    from app.main import api_run, club_problem
 
     tz = ZoneInfo("America/Toronto")
     day = "2026-11-19"
@@ -217,24 +217,46 @@ def test_add_at_taken_time_asks_before_adding() -> None:
                              ends_at=datetime.fromisoformat(f"{day}T{end}:00").replace(tzinfo=tz))
 
     before = [ev("t3", "f1", "17:00", "18:00")]  # Otters already at 5pm, North
-    added = ev("t2", "f1", "18:00", "19:00")      # Badgers pushed to 6-7pm
-    rules = Rules(requirements=[Requirement(
-        team_id="t2", event_type="practice", sessions_per_week=1, duration_minutes=60,
-        allowed_days=[3], earliest_start=dtime(17, 0), latest_end=dtime(20, 0))])
-    question = _add_clarification(club_problem(), before, Proposal(rules=rules, events=before + [added]))
-    assert question is not None
-    assert "Badgers" in question["question"] and "5:00 PM" in question["question"]
-    assert "6:00" in question["question"] and "Do you want to make any other changes" in question["question"]
-    assert question["blockers"] and question["blockers"][0]["team"] == "Otters"
+    plan = EditPlan(ops=[EditOp(
+        action="create_once", team_id="t2", event_type="practice", duration_minutes=60, title="Badgers practice",
+        to=Placement(date=ddate(2026, 11, 19), weekdays=[3], field_id="f1",
+                     earliest_start=dtime(17, 0), latest_end=dtime(20, 0), exactness="any"),
+    )])
+    proposal = build_edit_proposal(club_problem(), before, plan)
+    assert proposal.questions, "a shifted add must ask, not silently add"
+    question = proposal.questions[0]
+    assert "Badgers" in question and "5:00 PM" in question and "6:00" in question
+    assert "Do you want to make any other changes" in question
 
-    # Same team already that day at 5pm, second session at 6pm: also ask.
-    own = [ev("t2", "f1", "17:00", "18:00")]
-    question2 = _add_clarification(club_problem(), own, Proposal(rules=rules, events=own + [added]))
-    assert question2 is not None and "second" in question2["question"]
+    # The demo surfaces the same library questions (no app-side clarification).
+    result = api_run({"mode": "mock", "request": "Move the Badgers Thursday practice to Friday 6pm",
+                      "events": [e.to_dict() for e in before]})
+    assert "questions" in result and "understood" in result
 
     # Placed exactly at the requested 5pm with a free day: no question.
-    free = Proposal(rules=rules, events=[ev("t2", "f2", "17:00", "18:00")])
-    assert _add_clarification(club_problem(), before, free) is None
+    free_plan = EditPlan(ops=[EditOp(
+        action="create_once", team_id="t2", event_type="practice", duration_minutes=60, title="Badgers practice",
+        to=Placement(date=ddate(2026, 11, 19), field_id="f2", earliest_start=dtime(17, 0), latest_end=dtime(20, 0), exactness="any"),
+    )])
+    assert build_edit_proposal(club_problem(), before, free_plan).questions == []
+
+
+def test_demo_run_shows_understood_and_sends_selected() -> None:
+    from app.main import api_run
+
+    proposal = _plan()
+    events = proposal["events"]
+    sid = events[0].get("session_id")
+    # Calendar payload carries tap-to-select ids (library session keys).
+    cal = get_calendar()
+    assert all(e.get("session_id") for e in cal["events"])
+    moved = api_run({"mode": "mock", "request": "Move the Badgers Thursday practice to Friday 6pm",
+                     "events": events, "selected_session_ids": [sid] if sid else []})
+    assert moved["understood"], "What I understood chips must be present"
+    assert "move" in moved["understood"][0]["text"] and moved["understood"][0]["exactness"] in ("exact", "preferred", "any")
+    assert "questions" in moved and "clarification" in moved
+    questioned = api_run({"mode": "mock", "request": "do something vague", "events": events})
+    assert questioned["proposal"]["questions"] or questioned["questions"]
 
 
 def test_mock_answers_the_request_it_was_given() -> None:
@@ -334,9 +356,14 @@ def test_frontend_shows_current_diff_and_simple_primary() -> None:
     # Waiting signal: spinner banner appears and the button locks while running.
     assert 'id="working"' in html and 'class="spinner"' in html
     assert "do not press the button again" in html and "setBusy(true" in html and "setBusy(false)" in html
-    # Clarification: an off-time add asks before anyone can approve it.
-    assert 'id="clarify"' in html and "Quick question before you approve" in html
-    assert "clarify-keep" in html and "clarify-discard" in html
+    # Questions come from the library (proposal.questions); the app just shows them.
+    assert 'id="questions"' in html and "Quick question before you approve" in html
+    assert "question-answer" in html and "question-send" in html
+    # What I understood: one chip per change, before the result detail.
+    assert 'id="understood"' in html and "What I understood" in html
+    assert html.index('id="understood"') < html.index('id="diff"')
+    # Tap-to-select sessions: selected ids are sent with /api/run.
+    assert "data-session" in html and "selected_session_ids: S.selected" in html and "Tap to select" in html
 
 
 def test_mock_voice_and_vision() -> None:

@@ -131,6 +131,9 @@ details.week ul { margin: 0.3rem 0 0.5rem; padding-left: 1.25rem; }
 <section class="tab" id="review">
 <h2><span class="step-num">2</span>Review — check every change before it counts</h2>
 <div id="clarify" hidden></div>
+<div id="questions" hidden></div>
+<h3>What I understood</h3>
+<div id="understood" class="muted">No changes understood yet.</div>
 <p class="muted"><span class="chip bad">Red</span> = changed, cancelled, or a conflict to fix. Plain rows have not changed. Weeks start minimized — tap a week to see its sessions.</p>
 <h3>Could not be placed</h3>
 <div id="shortfalls" class="muted">—</div>
@@ -163,7 +166,7 @@ details.week ul { margin: 0.3rem 0 0.5rem; padding-left: 1.25rem; }
 </main>
 <script>
 "use strict";
-const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], games: null, club: null, approved: false, diff: null, busy: false };
+const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], games: null, club: null, approved: false, diff: null, busy: false, selected: [], questions: [], understood: [], lastRequest: "" };
 const $ = (id) => document.getElementById(id);
 const DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -174,6 +177,7 @@ function teamName(id) { const t = ((S.club || {}).teams || []).find((x) => x.id 
 function fieldName(id) { const f = ((S.club || {}).fields || []).find((x) => x.id === id); return f ? f.name : id; }
 function fmt(e) { return e.starts_at.slice(0, 10) + " " + e.starts_at.slice(11, 16) + "–" + e.ends_at.slice(11, 16) + " · " + (e.title || e.event_type) + " (" + teamName(e.team_id) + ", " + fieldName(e.field_id) + ")"; }
 function key(e) { return [e.team_id, e.field_id, e.event_type, e.title, e.starts_at, e.ends_at].join("|"); }
+function sessionId(e) { return e.session_id || [e.starts_at, e.team_id, e.field_id, e.event_type, e.title].join("|"); }
 function setModeNote() { const mock = S.mode === "mock"; $("mock-note").hidden = !mock; $("mode-note").textContent = mock ? "Pre-defined questions and answers only — see the note below." : (S.mode === "open" ? "Muse Spark (open weights) hosted via Baseten, using OPEN_MODEL_API_BASE / OPEN_MODEL_API_KEY from .env." : "Real assistant using your key in .env. Mock is only an offline fallback."); }
 async function post(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ mode: S.mode }, body)) });
@@ -205,13 +209,32 @@ function weeksHtml(events, mark) {
   }).join("");
 }
 function setWeeks(box, open) { box.querySelectorAll("details.week").forEach((d) => { d.open = open; }); }
-function showProposal(p, trace, clarification) {
+function showProposal(p, trace, clarification, meta) {
   S.base = S.events.length ? S.events.slice() : S.current.slice();
   S.proposal = p; S.events = p.events || []; S.approved = false; S.diff = computeDiff(S.base, S.events);
+  S.questions = (meta && meta.questions) || p.questions || []; S.understood = (meta && meta.understood) || [];
   $("approval").textContent = ""; $("summary").textContent = p.summary || "(no summary)"; $("summary").classList.remove("muted");
   $("trace").textContent = (trace || []).map((s) => JSON.stringify(s)).join("\n") || "—";
-  renderClarify(clarification || null); renderDiff(); renderCalendar(); renderChecks(p); renderShortfalls(p); syncButtons();
+  renderClarify(clarification || null); renderQuestions(); renderUnderstood(); renderDiff(); renderCalendar(); renderChecks(p); renderShortfalls(p); syncButtons();
   document.getElementById("review").scrollIntoView({ block: "start" });
+}
+function renderUnderstood() {
+  const box = $("understood");
+  if (!S.understood.length) { box.textContent = "No changes understood yet."; return; }
+  box.innerHTML = S.understood.map((c) => "<span class=\"chip ok\">" + esc(c.text) + "</span>").join(" ");
+  box.classList.remove("muted");
+}
+function renderQuestions() {
+  const box = $("questions");
+  if (!S.questions.length) { box.hidden = true; box.innerHTML = ""; return; }
+  box.innerHTML = "<div class=\"card\" style=\"border-color:#8a6d00;background:#fff8e1\"><strong>Quick question before you approve</strong>" +
+    S.questions.map((q) => "<p>" + esc(q) + "</p>").join("") +
+    "<div class=\"row\"><input id=\"question-answer\" type=\"text\" placeholder=\"Type your answer\" style=\"flex:1;min-height:2.9rem\"><button id=\"question-send\" type=\"button\" class=\"primary\" style=\"width:auto\">Send answer</button>" +
+    "<button id=\"question-discard\" type=\"button\">Discard this proposal</button></div>" +
+    "<p class=\"hint\">Your answer is added to your request and sent again. Nothing is saved until you approve.</p></div>";
+  box.hidden = false;
+  $("question-send").addEventListener("click", () => { const a = $("question-answer").value.trim(); if (!a) return; $("request").value = (S.lastRequest || $("request").value) + " " + a; run("run"); });
+  $("question-discard").addEventListener("click", () => { S.proposal = null; S.events = []; S.diff = null; S.questions = []; box.hidden = true; $("summary").textContent = "Proposal discarded. Your current schedule in Plan is unchanged."; renderDiff(); syncButtons(); });
 }
 function renderClarify(c) {
   const box = $("clarify"); S.clarification = c || null;
@@ -238,7 +261,9 @@ function renderCurrent() {
   const days = S.current.map((e) => e.starts_at.slice(0, 10)).sort();
   box.innerHTML = "<p><strong>" + S.current.length + " sessions</strong> · " + esc(days[0]) + " to " + esc(days[days.length - 1]) + " · " + ((S.club || {}).teams || []).length + " teams · " + (((S.club || {}).coaches || []).length) + " coaches</p>" +
     "<div class=\"row\"><button id=\"expand-current\" type=\"button\">Expand all sessions</button><button id=\"minimize-current\" type=\"button\">Minimize sessions</button></div>" +
-    "<p class=\"hint\">Sessions are grouped by week and start minimized. Tap a week to expand it.</p>" + weeksHtml(S.current, null);
+    "<p class=\"hint\">Sessions are grouped by week and start minimized. Tap a week to expand it. Tap sessions below to select them — selected sessions are sent with your request (\'this one\').</p>" +
+    "<div id=\"select-sessions\">" + S.current.map((e) => { const sid = sessionId(e); const on = S.selected.includes(sid); return "<button type=\"button\" class=\"chip " + (on ? "bad" : "ok") + "\" data-session=\"" + esc(sid) + "\">" + (on ? "Selected: " : "Tap to select: ") + esc(fmt(e)) + "</button>"; }).join(" ") + "</div>" + weeksHtml(S.current, null);
+  box.querySelectorAll("[data-session]").forEach((b) => b.addEventListener("click", () => { const sid = b.getAttribute("data-session"); S.selected = S.selected.includes(sid) ? S.selected.filter((x) => x !== sid) : S.selected.concat([sid]); renderCurrent(); }));
   $("expand-current").addEventListener("click", () => setWeeks(box, true));
   $("minimize-current").addEventListener("click", () => setWeeks(box, false));
 }
@@ -280,7 +305,7 @@ function renderShortfalls(p) {
     box.classList.remove("alert-red");
   }
 }
-function syncButtons() { const failed = S.proposal ? S.proposal.check_results.filter((c) => !c.passed).length : 1; $("approve-btn").disabled = !S.proposal || failed > 0; $("notices-btn").disabled = !S.approved; }
+function syncButtons() { const failed = S.proposal ? S.proposal.check_results.filter((c) => !c.passed).length : 1; const openQ = S.proposal ? (S.proposal.questions || []).length + (S.questions || []).length : 0; $("approve-btn").disabled = !S.proposal || failed > 0 || openQ > 0; $("notices-btn").disabled = !S.approved; }
 function paintSteps(steps) { $("trace").textContent = steps.length ? steps.join("\n") : "Working…"; }
 const RUN_BUTTONS = ["run-btn", "plan-btn", "revise-btn", "reschedule-btn", "cancel-btn", "rain-set-btn", "rain-day-btn"];
 function setBusy(on, stage) {
@@ -297,7 +322,7 @@ async function runStream(kind, payload) {
   if (!r.body) {
     let j; if (kind === "plan") j = await post("/api/plan", payload); if (kind === "revise") j = await post("/api/revise", payload);
     if (kind === "reschedule") j = await post("/api/reschedule", payload); if (kind === "cancel") j = await post("/api/cancel", payload); if (kind === "run") j = await post("/api/run", payload);
-    showProposal(j.proposal, j.trace, j.clarification); return;
+    showProposal(j.proposal, j.trace, j.clarification, j); return;
   }
   if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error((j && j.detail) || ("Request failed (" + r.status + ")")); }
   const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ""; const steps = []; paintSteps(steps);
@@ -305,15 +330,15 @@ async function runStream(kind, payload) {
     while ((idx = buf.indexOf("\n\n")) >= 0) { const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
       for (const line of frame.split("\n")) { if (!line.startsWith("data:")) continue; const evt = JSON.parse(line.slice(5));
         if (evt.type === "step") { if (evt.phase === "start") { steps.push("… " + evt.label); setBusy(true, "Working… " + evt.label + " — please wait, do not press the button again."); } else { steps[steps.length - 1] = "✓ " + evt.label + " — " + (evt.latency_ms / 1000).toFixed(1) + "s"; setBusy(true, "Working… " + evt.label + " done. Finishing your schedule…"); } paintSteps(steps); }
-        else if (evt.type === "result") { showProposal(evt.proposal, evt.trace, evt.clarification); return; } else if (evt.type === "error") throw new Error(evt.detail || "Request failed"); } } }
+        else if (evt.type === "result") { showProposal(evt.proposal, evt.trace, evt.clarification, evt); return; } else if (evt.type === "error") throw new Error(evt.detail || "Request failed"); } } }
   throw new Error("The stream ended without a result.");
 }
 async function run(kind) {
   if (S.busy) return;
   clearFail(); setBusy(true, "Working… your request is being processed. Please wait — do not press the button again.");
-  const request = $("request").value; const calendar = S.events.length ? S.events : S.current;
+  const request = $("request").value; S.lastRequest = request; const calendar = S.events.length ? S.events : S.current;
   try {
-    if (kind === "run") { const payload = { request, games: S.games, extra_busy: S.extraBusy }; if (S.proposal) payload.proposal = S.proposal; if (calendar.length) payload.events = calendar; await runStream(kind, payload); }
+    if (kind === "run") { const payload = { request, games: S.games, extra_busy: S.extraBusy, selected_session_ids: S.selected }; if (S.proposal) payload.proposal = S.proposal; if (calendar.length) payload.events = calendar; await runStream(kind, payload); }
     if (kind === "plan") await runStream(kind, { request, games: S.games, extra_busy: S.extraBusy });
     if (kind === "revise") { if (!S.proposal) throw new Error("Create a proposal first (Plan), then revise it in Review."); await runStream(kind, { proposal: S.proposal, request, extra_busy: S.extraBusy, games: S.games }); }
     if (kind === "reschedule") { if (!calendar.length) throw new Error("There is no calendar yet — set one first."); await runStream(kind, { events: calendar, request, extra_busy: S.extraBusy }); }

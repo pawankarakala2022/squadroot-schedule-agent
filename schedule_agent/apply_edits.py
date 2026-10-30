@@ -164,6 +164,7 @@ class _Builder:
         self.blocked_lines: list[str] = []
         self.rule_lines: list[str] = []
         self.derived_requirements: list[Requirement] = []
+        self.questions: list[str] = []
         base_rules = _draft_rules(draft)
         self.updated_rules: Rules | None = _copy_rules(base_rules) if base_rules is not None else None
         self._handled: set[str] = set()
@@ -385,6 +386,63 @@ class _Builder:
             )
         return placed
 
+    def _maybe_shift_question(self, op: EditOp, original: ProposedEvent | None, placed: ProposedEvent) -> None:
+        """Ask (never silently accept) when a session lands later than asked.
+
+        This is the follow-up question that used to live in the demo
+        app: the solver shifted only because the asked slot was taken
+        or the team already trains that day, so the manager chooses.
+        """
+        to = op.to
+        if to is None or (to.exactness if to else "any") == "exact":
+            return
+        requested_t = to.start_time or to.earliest_start
+        if requested_t is None:
+            return
+        local = placed.starts_at.astimezone(self.tz)
+        if local.time() <= requested_t:
+            return
+        duration = int((placed.ends_at - placed.starts_at).total_seconds() // 60)
+        req_start = datetime.combine(local.date(), requested_t, tzinfo=self.tz)
+        req_end = req_start + timedelta(minutes=duration)
+        blockers = [
+            e for e in self.current
+            if (original is None or session_key(e) != session_key(original))
+            and e.starts_at < req_end and req_start < e.ends_at
+            and (e.field_id == placed.field_id or e.team_id == placed.team_id)
+        ]
+        same_team_day = [
+            e for e in self.kept
+            if e.team_id == placed.team_id and e.starts_at.astimezone(self.tz).date() == local.date()
+        ]
+        if not blockers and not same_team_day:
+            return
+
+        def clock(dt: datetime) -> str:
+            hour = dt.hour % 12 or 12
+            return f"{hour}:{dt.minute:02d} {'AM' if dt.hour < 12 else 'PM'} ({dt.strftime('%H:%M')})"
+
+        team_name = next((t.name for t in self.problem.teams if t.id == placed.team_id), placed.team_id)
+        field_name = next((f.name for f in self.problem.fields if f.id == placed.field_id), placed.field_id)
+        placed_label = f"{clock(local)}-{clock(placed.ends_at.astimezone(self.tz))}"
+        if same_team_day and not blockers:
+            first = sorted(same_team_day, key=lambda e: e.starts_at)[0].starts_at.astimezone(self.tz)
+            question = (
+                f"You already have {team_name} scheduled at {clock(first)} on {local.date().isoformat()}. "
+                f"This adds a second {team_name} session that day at {placed_label}. "
+                "Do you want to make any other changes, or keep both sessions?"
+            )
+        else:
+            taken = sorted(blockers, key=lambda e: e.starts_at)[0] if blockers else None
+            taken_text = f" by {taken.title}" if taken else ""
+            question = (
+                f"{clock(req_start)} on {local.date().isoformat()} at {field_name} is already taken{taken_text}. "
+                f"{team_name} was placed at {placed_label} instead. "
+                "Do you want to make any other changes, or keep it at that time?"
+            )
+        if question not in self.questions:
+            self.questions.append(question)
+
     def _remove_kept(self, ev: ProposedEvent) -> None:
         key = session_key(ev)
         self.kept = [e for e in self.kept if session_key(e) != key]
@@ -421,6 +479,7 @@ class _Builder:
             if placed is not None:
                 self.added.append(placed)
                 self.moved.append((original, placed))
+                self._maybe_shift_question(op, original, placed)
 
     def _do_create_once(self, op: EditOp) -> None:
         exactness = op.to.exactness if op.to else "any"
@@ -437,6 +496,7 @@ class _Builder:
         if placed is not None:
             self.added.append(placed)
             self.created.append(placed)
+            self._maybe_shift_question(op, None, placed)
 
     def _do_create_recurring(self, op: EditOp) -> None:
         team_id = op.team_id
@@ -663,7 +723,7 @@ class _Builder:
         )
         results = run_checks(checking_problem, check_rules, events)
         summary = self._summary(events)
-        return Proposal(rules=rules, events=events, check_results=results, shortfalls=self.shortfalls, summary=summary, questions=[])
+        return Proposal(rules=rules, events=events, check_results=results, shortfalls=self.shortfalls, summary=summary, questions=list(self.questions))
 
     def _summary(self, events: list[ProposedEvent]) -> str:
         lines: list[str] = []

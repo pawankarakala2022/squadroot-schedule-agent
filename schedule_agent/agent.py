@@ -734,7 +734,8 @@ class ScheduleAgent:
             events=calendar, draft=draft, selected_session_ids=selected_session_ids, language=language,
         )
         self.last_trace.append(
-            {"step": "edit_plan", "ops": len(edit_plan.ops), "questions": len(edit_plan.questions), "notes": len(edit_plan.notes)}
+            {"step": "edit_plan", "ops": len(edit_plan.ops), "questions": len(edit_plan.questions), "notes": len(edit_plan.notes),
+             "ops_detail": edit_plan.to_dict()["ops"]}
         )
         out = build_edit_proposal(
             problem, calendar, edit_plan, verify=verify, draft=draft,

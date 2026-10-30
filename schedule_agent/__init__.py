@@ -39,7 +39,7 @@ from .vision import (
     games_to_events,
 )
 from .apply_edits import build_edit_proposal
-from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits
+from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits, session_key
 from .voice import VoiceConfig, transcribe_audio
 
 __version__ = "6.0.0"
@@ -101,4 +101,5 @@ __all__ = [
     "EditPlan",
     "parse_edits",
     "build_edit_proposal",
+    "session_key",
 ]

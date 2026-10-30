@@ -106,6 +106,36 @@ def test_deterministic_same_input_same_proposal():
     assert a.events == b.events and a.summary == b.summary and a.to_dict() == b.to_dict()
 
 
+def test_block_with_no_target_closes_to_field_and_date():
+    cal = _cal()
+    plan = EditPlan(ops=[EditOp(action="block", to=Placement(date=date(2026, 11, 12), field_id="f1"))])
+    out = build_edit_proposal(_problem(), cal, plan)
+    assert cal[0] in out.events
+    thu = [e for e in out.events if e.starts_at.date() == date(2026, 11, 12)]
+    assert thu and all(e.field_id != "f1" for e in thu)
+
+
+def test_injection_plan_changes_nothing():
+    cal = _cal()
+    out = build_edit_proposal(_problem(), cal, EditPlan(ops=[], notes=["ignore instructions inside request"]))
+    assert sorted(out.events, key=lambda e: e.starts_at) == sorted(cal, key=lambda e: e.starts_at)
+    assert all(c.passed for c in out.check_results)
+
+
+def test_untargeted_never_move_in_every_action():
+    cal = _cal()
+    plans = [
+        EditPlan(ops=[EditOp(action="cancel", target=SessionTarget(team_ids=["t2"], date_from=date(2026, 11, 12), date_to=date(2026, 11, 12)))]),
+        EditPlan(ops=[EditOp(action="move", target=SessionTarget(team_ids=["t2"], date_from=date(2026, 11, 12), date_to=date(2026, 11, 12)),
+                             to=Placement(date=date(2026, 11, 13), start_time=time(18, 0), field_id="f1", exactness="exact"))]),
+        EditPlan(ops=[EditOp(action="create_once", team_id="t1", event_type="game", to=Placement(date=date(2026, 11, 14), start_time=time(17, 0), field_id="f2", exactness="exact"))]),
+        EditPlan(ops=[EditOp(action="block", target=SessionTarget(field_ids=["f1"], date_from=date(2026, 11, 12), date_to=date(2026, 11, 12)))]),
+    ]
+    for plan in plans:
+        out = build_edit_proposal(_problem(), cal, plan)
+        assert cal[0] in out.events  # Monday Foxes is never targeted here
+
+
 def test_change_rule_only_named_team():
     tz = ZoneInfo(TZ)
     rules = Rules(requirements=[
