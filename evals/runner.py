@@ -37,6 +37,7 @@ from schedule_agent.errors import AgentError, ModelError
 from schedule_agent.llm import ChatFn
 
 from evals.cases import CASES, EvalCase
+from evals.edit_cases import EDIT_CASES, EditCaseScore, edit_plan_accuracy, run_edit_suite, score_edit_case
 
 FIELDS_PER_REQUIREMENT = 8
 DOTENV_ALLOWLIST = (

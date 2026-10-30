@@ -701,7 +701,7 @@ class _Builder:
             for s in self.shortfalls:
                 lines.append(f"- {s.reason}")
         kept_count = len([e for e in self.current if session_key(e) not in self._handled])
-        lines.append(f"{kept_count} existing session(s) unchanged.")
+        lines.append(f"Kept {kept_count} session(s) unchanged. {kept_count} existing session(s) unchanged.")
         return "\n".join(lines)
 
 
