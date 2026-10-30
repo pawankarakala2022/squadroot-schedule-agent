@@ -339,7 +339,9 @@ def test_frontend_shows_current_diff_and_simple_primary() -> None:
     html = index().path.read_text(encoding="utf-8")
     assert 'id="run-btn"' in html and "Create schedule / Apply my wording" in html
     assert 'id="current-calendar"' in html and 'id="diff"' in html
-    assert 'id="availability-btn"' in html and "Read ground &amp; coach photo" in html
+    # One prompt: typing, recording and files all land in the same box.
+    assert 'id="ingest-files"' in html and 'id="ingest-btn"' in html and "Read file(s) into this box" in html
+    assert 'id="record-btn"' in html and "Speak" in html and "One box: type, speak, or attach" in html
     assert "can be wrong" in html and "modes.meta" in html  # real mode preferred, mock warned
     assert "Mock has pre-defined questions and answers" in html and 'id="mock-note"' in html
     assert "Muse Spark via Baseten" in html and "hosted via Baseten" in html
@@ -362,8 +364,10 @@ def test_frontend_shows_current_diff_and_simple_primary() -> None:
     # What I understood: one chip per change, before the result detail.
     assert 'id="understood"' in html and "What I understood" in html
     assert html.index('id="understood"') < html.index('id="diff"')
-    # Tap-to-select sessions: selected ids are sent with /api/run.
-    assert "data-session" in html and "selected_session_ids: S.selected" in html and "Tap to select" in html
+    # Simple flow only: no Advanced single-action buttons and no
+    # tap-to-select session picking under Plan.
+    assert 'id="plan-btn"' not in html and "Advanced — run exactly one action" not in html
+    assert "Tap to select" not in html and "selected_session_ids: S.selected" not in html
 
 
 def test_mock_voice_and_vision() -> None:

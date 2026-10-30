@@ -1,5 +1,28 @@
 # Changelog
 
+## v6.2.0 (2026-10-30)
+
+Additive, backward compatible: one intake for every way a manager
+reaches the agent. New `schedule_agent/ingest.py` — `Attachment`,
+`PdfDocument`, `extract_pdf_tables`, `IngestedRequest`,
+`ingest_request(problem, *, text=None, attachments=None, chat,
+voice_config=None, transcribe_fn=None, language="en")` — normalizes
+typed text, voice notes (transcribed to text), text files,
+screenshots/photos and PDFs into request text plus merged league
+games and grounds/coach availability. PDF tables are extracted from
+the embedded text layer in code (no new dependency), then read with
+the same strict schemas and exact-match validation as photos;
+scanned/image-only PDFs fail safely asking for a screenshot.
+`ScheduleAgent.handle_ingested(problem, ingested, ...)` runs the
+intake through the existing `handle` flow unchanged. Vision gains
+`extract_games_from_text` / `extract_availability_from_text`,
+`merge_schedules` / `merge_availability`, and `availability_to_busy`
+now unions ground windows per field, so several screenshots that each
+open the same field on different days no longer block each other.
+Demo: `POST /api/ingest` accepts multiple mixed files; the page gains
+a multi-file picker and direct speech-to-text recording (the old
+single-photo endpoints remain). No existing name or shape changed.
+
 ## v6.1.0 (2026-10-30)
 
 Model request timeout is now configurable: `ModelConfig` gains an

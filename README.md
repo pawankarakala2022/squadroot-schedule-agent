@@ -212,6 +212,36 @@ browser between requests. Related calls are `plan`, `revise`, `reschedule`,
 `cancel`, plus `extract_games`/`games_to_busy` (schedule photos), `transcribe_audio`
 (voice), and `draft_notices` (one family notice per language).
 
+### Every input, one intake (v6.2.0)
+
+However the manager reaches you — typed words, speech, screenshots, or
+PDF ground schedules — normalize it once, then run the same agent:
+
+```python
+from schedule_agent import Attachment, ingest_request
+from schedule_agent.voice import VoiceConfig
+
+intake = ingest_request(
+    problem,
+    text=typed_words_or_none,
+    attachments=[Attachment.pdf("grounds.pdf", pdf_bytes),
+                 Attachment.image("coach.png", png_bytes)],  # any mix, any count
+    chat=chat_fn(config),
+    voice_config=VoiceConfig.from_env(),  # only needed for audio attachments
+)
+proposal = agent.handle_ingested(problem, intake, events=saved_calendar_or_none)
+```
+
+PDF tables are read from the embedded text layer in code
+(`extract_pdf_tables`, standard library only) and then understood with
+the same strict schemas and exact-match validation as photos. A
+scanned/image-only PDF has no text layer: intake fails safely and asks
+for a screenshot of the page instead of guessing. Several screenshots
+merge safely — ground windows are unioned per field before becoming
+busy, so partial photos never block each other's open days. The demo
+exposes this as `POST /api/ingest` (multi-file) and the Plan tab now
+records speech directly in the browser.
+
 The demo in `app/` is a reference host: it rebuilds the `Problem` from
 fictional `demo/club.json`, uses a scripted mock chat and a mock coach-busy
 `verify` hook, and exposes thin endpoints (`/api/plan`, `/api/revise`,

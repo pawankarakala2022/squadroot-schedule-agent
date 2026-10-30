@@ -32,6 +32,7 @@ from .solver import solve
 from .understand import understand_request
 from .apply_edits import build_edit_proposal
 from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits
+from .ingest import IngestedRequest
 from .vision import ScheduleImport, games_to_busy, games_to_events
 
 # How many times a verify hook may send new busy times back for a re-solve.
@@ -748,6 +749,63 @@ class ScheduleAgent:
         unchanged = f"{len(calendar)} existing session(s) unchanged." if calendar else "0 existing session(s) unchanged."
         # The change lines lead; the explained summary follows.
         out.summary = out.summary + "\n" + self._explain(problem, out, language, total_line=unchanged)
+        return out
+
+    def handle_ingested(
+        self,
+        problem: Problem,
+        ingested: IngestedRequest | dict[str, Any],
+        *,
+        proposal: Proposal | dict[str, Any] | None = None,
+        events: list[ProposedEvent] | list[dict[str, Any]] | None = None,
+        previous: Rules | dict[str, Any] | None = None,
+        verify: VerifyHook | None = None,
+        not_before: date | str | None = None,
+        allowed_fields: list[str] | None = None,
+        language: str = "en",
+        selected_session_ids: list[str] | None = None,
+    ) -> Proposal:
+        """Run one normalized intake (text/voice/photos/PDFs) through :meth:`handle`.
+
+        The intake's grounds/coach availability becomes ``Busy`` on a
+        copy of ``problem`` (the caller's copy is never mutated), its
+        league games enter as the fixed checked game events ``handle``
+        already supports, and its text is the request. Intake notes are
+        recorded on the proposal's rules so the manager sees what was
+        read. Files alone with no words and no saved calendar fail
+        safely: the host supplies the standard request (as the demo
+        does) rather than the library inventing one.
+        """
+        if isinstance(ingested, dict):
+            ingested = IngestedRequest.from_dict(ingested)
+        if not isinstance(ingested, IngestedRequest):
+            raise AgentError("The uploaded information could not be read; please send it again.")
+        working = ingested.problem_with_busy(problem, include_games=False)
+        self.last_trace.append(
+            {
+                "step": "ingest",
+                "sources": len(ingested.sources),
+                "games": len(ingested.games.games),
+                "grounds": len(ingested.availability.grounds),
+                "coach_windows": len(ingested.availability.coach),
+                "busy": len(ingested.busy(problem)),
+            }
+        )
+        if not ingested.text.strip() and events is None and proposal is None:
+            raise AgentError(
+                "I read the upload, but I still need a few words for the schedule itself "
+                "(for example: every team practices once a week after 5pm)."
+            )
+        out = self.handle(
+            working, ingested.text,
+            proposal=proposal, events=events, previous=previous, verify=verify,
+            not_before=not_before, allowed_fields=allowed_fields, language=language,
+            games=ingested.games if ingested.games.games else None,
+            selected_session_ids=selected_session_ids,
+        )
+        for note in [*ingested.notes, *ingested.games.notes, *ingested.availability.notes]:
+            if note and note not in out.rules.notes:
+                out.rules.notes.append(note)
         return out
 
     @staticmethod

@@ -24,10 +24,12 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from schedule_agent import (
+    Attachment,
     AvailabilityImport,
     Busy,
     ChatFn,
     Field,
+    IngestedRequest,
     ModelConfig,
     Problem,
     Proposal,
@@ -42,6 +44,7 @@ from schedule_agent import (
     extract_availability,
     extract_games,
     games_to_busy,
+    ingest_request,
     transcribe_audio,
 )
 from schedule_agent.llm import request_timeout_from_env
@@ -967,11 +970,20 @@ def _problem_with_games(body: dict) -> tuple[Problem, list[Busy]]:
 
     The agent receives the games themselves (as fixed game events), so
     the returned problem deliberately does not carry their busy -- the
-    busy list is only for deciding the default request text.
+    busy list is only for deciding the default request text. A unified
+    ``body['ingested']`` intake (from /api/ingest) folds in the same
+    way: its availability becomes problem busy, its games stay fixed
+    events for the agent.
     """
     extra = [Busy.from_dict(b) for b in body.get("extra_busy", [])]
     problem = club_problem(extra)
     games = body.get("games")
+    ingested = body.get("ingested")
+    if ingested:
+        intake = IngestedRequest.from_dict(ingested)
+        problem = intake.problem_with_busy(problem, include_games=False)
+        if intake.games.games:
+            games = intake.games.to_dict()
     if not games:
         return problem, []
     return problem, games_to_busy(ScheduleImport.from_dict(games), problem)
@@ -990,7 +1002,7 @@ def _request_with_games_default(body: dict, game_busy: list[Busy]) -> str:
         return request
     if game_busy:
         return str(CLUB["presets"]["plan_request"])
-    if body.get("games"):
+    if body.get("games") or body.get("ingested"):
         raise HTTPException(
             400,
             "None of those games matched a team or field in this club, so there is "
@@ -1005,7 +1017,7 @@ def api_plan(body: dict) -> dict:
     problem, game_busy = _problem_with_games(body)
     return run_agent(body.get("mode", "mock"), "plan", problem=problem,
                      request=_request_with_games_default(body, game_busy), previous=body.get("previous"),
-                     games=body.get("games"), language=_request_language(body))
+                     games=_effective_games(body), language=_request_language(body))
 
 
 @app.post("/api/revise")
@@ -1054,7 +1066,7 @@ def api_run(body: dict) -> dict:
     return run_agent(body.get("mode", "mock"), "run", problem=problem,
                      request=_request_with_games_default(body, game_busy), proposal=body.get("proposal"),
                      events=body.get("events"), previous=body.get("previous"),
-                     games=body.get("games"), selected_session_ids=body.get("selected_session_ids"),
+                     games=_effective_games(body), selected_session_ids=body.get("selected_session_ids"),
                      language=_request_language(body))
 
 
@@ -1088,11 +1100,11 @@ def _stream_kwargs(call: str, body: dict) -> dict:
     if call == "plan":
         problem, game_busy = _problem_with_games(body)
         return {"problem": problem, "request": _request_with_games_default(body, game_busy),
-                "previous": body.get("previous"), "games": body.get("games"), "language": _request_language(body)}
+                "previous": body.get("previous"), "games": _effective_games(body), "language": _request_language(body)}
     if call == "revise":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
         return {"problem": problem, "proposal": body.get("proposal"), "request": body.get("request", ""),
-                "games": body.get("games"), "language": _request_language(body)}
+                "games": _effective_games(body), "language": _request_language(body)}
     if call == "reschedule":
         problem = club_problem([Busy.from_dict(b) for b in body.get("extra_busy", [])])
         return {"problem": problem, "events": body.get("events", []), "request": body.get("request", ""),
@@ -1108,7 +1120,7 @@ def _stream_kwargs(call: str, body: dict) -> dict:
         problem, game_busy = _problem_with_games(body)
         return {"problem": problem, "request": _request_with_games_default(body, game_busy),
                 "proposal": body.get("proposal"), "events": body.get("events"),
-                "previous": body.get("previous"), "games": body.get("games"), "selected_session_ids": body.get("selected_session_ids"),
+                "previous": body.get("previous"), "games": _effective_games(body), "selected_session_ids": body.get("selected_session_ids"),
                 "language": _request_language(body)}
     raise HTTPException(400, f"Unknown call {call!r}; use plan, revise, reschedule, cancel, add or run.")
 
@@ -1321,6 +1333,66 @@ async def api_availability(mode: str = Form("mock"), image: UploadFile = File(..
     """Read ground booking hours and coach unavailability from a photo."""
     data = await image.read()
     return availability_result(mode, data, image.content_type)
+
+
+def _effective_games(body: dict):  # type: ignore[no-untyped-def]
+    """Games dict for the agent: explicit body games win, else the intake's."""
+    if body.get("games"):
+        return body["games"]
+    ingested = body.get("ingested") or {}
+    games = ingested.get("games") or {}
+    return games if games.get("games") else None
+
+
+def ingest_result(mode: str, text: str, files: list) -> dict:  # type: ignore[no-untyped-def]
+    """Normalize typed text plus any uploaded files into one intake.
+
+    ``files`` is a list of (filename, mime_type, bytes): screenshots,
+    PDFs with readable tables, voice recordings and text files may be
+    mixed. Mock mode reads them with the scripted chat and the sample
+    transcript, clearly labelled; live modes use the real readers.
+    """
+    from schedule_agent import AgentError, ModelError
+
+    problem = club_problem()
+    attachments = [
+        Attachment(filename=name or "file", mime_type=mime or "", data=data)
+        for name, mime, data in files
+    ]
+    try:
+        if mode == "mock":
+            ingested = ingest_request(
+                problem, text=text or None, attachments=attachments, chat=mock_chat,
+                transcribe_fn=lambda _audio, _name: SAMPLE_TRANSCRIPT,
+            )
+        else:
+            voice_config = None
+            if mode == "meta":
+                _load_dotenv()
+                voice_config = VoiceConfig.from_env()
+            ingested = ingest_request(
+                problem, text=text or None, attachments=attachments,
+                chat=make_chat(mode), voice_config=voice_config,
+            )
+    except HTTPException:
+        raise
+    except (AgentError, ModelError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "ingested": ingested.to_dict(),
+        "busy": [b.to_dict() for b in ingested.busy(problem)],
+        "busy_count": len(ingested.busy(problem)),
+        "mock": mode == "mock",
+        "note": "Mock mode: files read with scripted answers, not the real assistant." if mode == "mock" else "",
+    }
+
+
+@app.post("/api/ingest")
+async def api_ingest(mode: str = Form("mock"), text: str = Form(""),
+                     files: list[UploadFile] = File([])) -> dict:
+    """Accept text plus multiple screenshots/PDFs/voice files as one intake."""
+    raw = [(f.filename or "file", f.content_type or "", await f.read()) for f in files]
+    return ingest_result(mode, text, raw)
 
 
 @app.get("/", response_class=FileResponse)

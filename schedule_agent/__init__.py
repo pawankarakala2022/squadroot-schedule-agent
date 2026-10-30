@@ -26,6 +26,7 @@ from .models import (
 )
 from .notify import FamilyNotice, FamilyNotices, draft_notices
 from .understand import understand_request
+from .ingest import Attachment, IngestedRequest, PdfDocument, extract_pdf_tables, ingest_request
 from .vision import (
     AvailabilityImport,
     CoachUnavailability,
@@ -34,15 +35,19 @@ from .vision import (
     ScheduleImport,
     availability_to_busy,
     extract_availability,
+    extract_availability_from_text,
     extract_games,
+    extract_games_from_text,
     games_to_busy,
     games_to_events,
+    merge_availability,
+    merge_schedules,
 )
 from .apply_edits import build_edit_proposal
 from .edits import EditOp, EditPlan, Placement, SessionTarget, parse_edits, session_key
 from .voice import VoiceConfig, transcribe_audio
 
-__version__ = "6.1.0"
+__version__ = "6.2.0"
 
 __all__ = [
     "__version__",
@@ -79,6 +84,15 @@ __all__ = [
     "AvailabilityImport",
     "extract_availability",
     "availability_to_busy",
+    "Attachment",
+    "IngestedRequest",
+    "PdfDocument",
+    "extract_pdf_tables",
+    "ingest_request",
+    "extract_games_from_text",
+    "extract_availability_from_text",
+    "merge_availability",
+    "merge_schedules",
     "ScheduleAgent",
     "ModelConfig",
     "ChatFn",
