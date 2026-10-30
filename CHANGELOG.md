@@ -1,5 +1,15 @@
 # Changelog
 
+## v6.2.1 (2026-10-30)
+
+Bug fix, no interface change: `extract_pdf_tables` now reads PDFs
+written by ReportLab and similar tools. Stream bodies no longer need
+an EOL before `endstream`; filter chains are decoded in order
+(`ASCII85Decode`, `ASCIIHexDecode`, `FlateDecode` and their short
+names); each stream's filters come from its own dictionary only; and
+literal strings decode octal (`\267`), `\b`/`\f` and line-continuation
+escapes.
+
 ## v6.2.0 (2026-10-30)
 
 Additive, backward compatible: one intake for every way a manager

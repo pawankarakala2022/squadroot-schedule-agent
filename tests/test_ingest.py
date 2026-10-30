@@ -1,5 +1,6 @@
 """Unified intake tests: text, voice, images, PDF tables (fake chat, no network)."""
 
+import base64
 import json
 import zlib
 from datetime import date, time
@@ -75,9 +76,17 @@ def _chat(messages, *, response_format=None):  # type: ignore[no-untyped-def]
     return "{}"
 
 
-def _pdf(rows: list[list[str]], *, compress: bool = False) -> bytes:
-    """Smallest text-layer PDF: one positioned string per cell."""
+def _pdf(rows: list[list[str]], *, compress: bool = False, reportlab: bool = False,
+         caption: str = "") -> bytes:
+    """Smallest text-layer PDF: one positioned string per cell.
+
+    ``reportlab=True`` writes the stream the way ReportLab does: an
+    ``[/ASCII85Decode /FlateDecode]`` chain and no EOL before
+    ``endstream``. ``caption`` is drawn as-is (escapes kept) above the table.
+    """
     ops: list[str] = ["BT /F1 10 Tf"]
+    if caption:
+        ops.append(f"1 0 0 1 50 740 Tm ({caption}) Tj")
     y = 700
     for row in rows:
         x = 50
@@ -88,15 +97,20 @@ def _pdf(rows: list[list[str]], *, compress: bool = False) -> bytes:
         y -= 20
     ops.append("ET")
     stream = "\n".join(ops).encode("latin-1")
-    raw = zlib.compress(stream) if compress else stream
+    raw = zlib.compress(stream) if compress or reportlab else stream
     filt = " /Filter /FlateDecode" if compress else ""
+    tail = b"\nendstream"
+    if reportlab:
+        raw = base64.a85encode(raw, wrapcol=60) + b"~>"
+        filt = " /Filter [ /ASCII85Decode /FlateDecode ]"
+        tail = b"endstream"
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
         b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length " + str(len(raw)).encode() + filt.encode() + b" >>\nstream\n" + raw + b"\nendstream",
+        b"<< /Length " + str(len(raw)).encode() + filt.encode() + b" >>\nstream\n" + raw + tail,
     ]
     out = bytearray(b"%PDF-1.4\n")
     for i, body in enumerate(objects, start=1):
@@ -178,7 +192,7 @@ def test_pdf_ground_table_understood_like_a_photo() -> None:
     pdf = Attachment.pdf("grounds.pdf", _pdf(GROUND_ROWS))
     got = ingest_request(_problem(), text="plan", attachments=[pdf], chat=chat)
     assert [sorted(g.weekdays) for g in got.availability.grounds] == [[1], [3]]
-    assert got.sources[0]["kind"] == "pdf"
+    assert got.sources[-1]["kind"] == "pdf"
 
 
 def test_pdf_game_table_becomes_blocking_games() -> None:
@@ -186,6 +200,24 @@ def test_pdf_game_table_becomes_blocking_games() -> None:
     got = ingest_request(_problem(), text="plan", attachments=[pdf], chat=_chat)
     assert got.games.blocking_games()[0].home_id == "t1"
     assert got.games.games[0].away_id is None  # external opponent, never guessed
+
+
+FOXES_ROWS = [["Name", "Opponent", "Date", "Ground", "Time"]] + [
+    ["Foxes", "Vs Gamblers", day, "South", "9am"]
+    for day in ("11/7/2026", "11/14/2026", "11/21/2026", "11/28/2026")
+]
+
+
+def test_reportlab_style_pdf_is_read() -> None:
+    """ASCII85+Flate chain, no EOL before endstream, octal escape in a caption."""
+    doc = extract_pdf_tables(_pdf(FOXES_ROWS, reportlab=True, caption=r"November 2026 \267 4 games"))
+    assert doc.rows()[0] == ["November 2026 · 4 games"]
+    assert doc.rows()[1:] == FOXES_ROWS
+
+
+def test_pdf_string_escapes_decoded() -> None:
+    doc = extract_pdf_tables(_pdf([["x"]], caption="a\\(b\\) \\101\\0501 c\\\nd"))
+    assert doc.rows()[0] == ["a(b) A(1 cd"]
 
 
 def test_scanned_pdf_without_text_layer_fails_safely() -> None:

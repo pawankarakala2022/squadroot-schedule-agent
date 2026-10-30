@@ -22,6 +22,7 @@ instead of guessing. New code only; bytes in, data out, no file I/O.
 
 from __future__ import annotations
 
+import base64
 import re
 import zlib
 from collections.abc import Callable
@@ -144,23 +145,57 @@ class PdfDocument:
         return "\n".join(" | ".join(cells) for cells in self.rows())
 
 
-_STREAM_RE = re.compile(rb"<<(.*?)>>\s*stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
+# The header may not cross ``endobj`` (so it is the stream's own dictionary),
+# and the EOL before ``endstream`` is optional (ReportLab omits it).
+_STREAM_RE = re.compile(
+    rb"<<((?:(?!endobj).)*?)>>\s*stream\r?\n(.*?)(?:\r?\n)?endstream", re.DOTALL
+)
+_FILTER_RE = re.compile(rb"/(ASCII85Decode|A85|ASCIIHexDecode|AHx|FlateDecode|Fl)\b")
 _NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
 
+def _flate(raw: bytes) -> bytes:
+    """zlib stream, falling back to a raw deflate body."""
+    try:
+        return zlib.decompress(raw)
+    except zlib.error:
+        return zlib.decompress(raw, -15)
+
+
+def _ascii85(raw: bytes) -> bytes:
+    """PDF ASCII85 body (``~>`` terminated, whitespace allowed)."""
+    body = re.sub(rb"\s+", b"", raw)
+    if body.startswith(b"<~"):
+        body = body[2:]
+    end = body.find(b"~>")
+    return base64.a85decode(body if end == -1 else body[:end])
+
+
+def _ascii_hex(raw: bytes) -> bytes:
+    """PDF ASCIIHex body (``>`` terminated, odd digit count padded)."""
+    digits = re.sub(rb"\s+", b"", raw).split(b">", 1)[0]
+    if len(digits) % 2:
+        digits += b"0"
+    return bytes.fromhex(digits.decode("ascii"))
+
+
+_DECODERS: dict[bytes, Callable[[bytes], bytes]] = {
+    b"ASCII85Decode": _ascii85, b"A85": _ascii85,
+    b"ASCIIHexDecode": _ascii_hex, b"AHx": _ascii_hex,
+    b"FlateDecode": _flate, b"Fl": _flate,
+}
+
+
 def _pdf_streams(data: bytes) -> list[bytes]:
-    """Decompressed content streams (FlateDecode or plain), in file order."""
+    """Decoded content streams (Flate / ASCII85 / ASCIIHex chains or plain), in file order."""
     out: list[bytes] = []
     for match in _STREAM_RE.finditer(data):
         header, raw = match.group(1), match.group(2)
-        if b"FlateDecode" in header:
-            try:
-                raw = zlib.decompress(raw)
-            except zlib.error:
-                try:
-                    raw = zlib.decompress(raw, -15)
-                except zlib.error:
-                    continue
+        try:
+            for name in _FILTER_RE.findall(header):
+                raw = _DECODERS[name](raw)
+        except (zlib.error, ValueError):
+            continue
         out.append(raw)
     return out
 
@@ -173,8 +208,16 @@ def _literal_string(content: str, start: int) -> tuple[str, int]:
     while i < len(content) and depth:
         ch = content[i]
         if ch == "\\" and i + 1 < len(content):
+            octal = re.match(r"[0-7]{1,3}", content[i + 1 : i + 4])
+            if octal is not None:  # \ddd: one byte, e.g. \267 is a middle dot
+                out.append(chr(int(octal.group(0), 8) & 0xFF))
+                i += 1 + len(octal.group(0))
+                continue
             nxt = content[i + 1]
-            out.append({"n": "\n", "r": "\r", "t": "\t", "(": "(", ")": ")", "\\": "\\"}.get(nxt, nxt))
+            if nxt in "\r\n":  # backslash-EOL: line continuation, no character
+                i += 3 if content[i + 1 : i + 3] == "\r\n" else 2
+                continue
+            out.append({"n": "\n", "r": "\r", "t": "\t", "b": "\b", "f": "\f"}.get(nxt, nxt))
             i += 2
             continue
         if ch == "(":
