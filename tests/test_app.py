@@ -149,6 +149,27 @@ def test_calendar_is_nov_dec_sample() -> None:
     assert {e["team_id"] for e in cal["events"]} == {f"t{i}" for i in range(1, 5)}
 
 
+
+def test_demo_grounds_open_weekend_days_all_season() -> None:
+    """Both demo grounds open 09:00-20:00 Sat/Sun every week; weekdays stay 17:00-20:00."""
+    from datetime import datetime, time, timedelta
+    from zoneinfo import ZoneInfo
+
+    problem = club_problem()
+    tz = ZoneInfo(problem.timezone)
+    closed = [b for b in problem.busy if b.resource.startswith("field:")]
+    assert all(f.open_from == time(9) and f.open_until == time(20) for f in problem.fields)
+    day = problem.season_start
+    while day <= problem.season_end:
+        for f in problem.fields:
+            mine = [b for b in closed if b.resource == f"field:{f.id}" and b.start.date() == day]
+            if day.weekday() >= 5:
+                assert not mine, day  # open all day Sat/Sun, every week of the season
+            else:
+                assert [(b.start, b.end) for b in mine] == [
+                    (datetime.combine(day, time(9), tzinfo=tz), datetime.combine(day, time(17), tzinfo=tz))]
+        day += timedelta(days=1)
+
 def test_coaches_train_back_to_back() -> None:
     """Each coach's pair runs consecutively: 17:00 then 18:00, same field."""
     events = get_calendar()["events"]

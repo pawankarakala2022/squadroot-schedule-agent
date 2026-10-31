@@ -187,7 +187,7 @@ function renderPlanPreview() {
     "<li><strong>Rule:</strong> " + esc(c.presets.plan_request) + "</li>" +
     "<li><strong>Dates:</strong> " + esc(dayMonth(c.season_start)) + " – " + esc(dayMonth(end)) + " " + esc(end.slice(0, 4)) + "</li>" +
     "<li><strong>Teams:</strong> " + esc(c.teams.map((t) => t.name).join(", ")) + "</li>" +
-    "<li><strong>Grounds:</strong> " + esc(c.fields.map((f) => f.name + (f.open_from ? " " + f.open_from + "–" + f.open_until : "")).join(", ")) + "</li>" +
+    "<li><strong>Grounds:</strong> " + esc(c.fields.map((f) => f.name + (f.open_from ? " " + f.open_from + "–" + f.open_until + (f.weekend_open_from ? " (Sat–Sun " + f.weekend_open_from + "–" + f.weekend_open_until + ")" : "") : "")).join(", ")) + "</li>" +
     (c.coaches || []).map((k) => "<li><strong>" + esc(k.label) + ":</strong> " + esc(k.note.replace(/^Coach \d+ /, "")) + "</li>").join("") +
     "</ul><div id=\"plan-expected\"><p class=\"muted\">Working out the schedule these rules give…</p></div>";
 }

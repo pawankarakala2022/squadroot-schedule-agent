@@ -12,8 +12,10 @@
     {"id": "t4", "name": "Wolves", "languages": ["es", "en"]}
   ],
   "fields": [
-    {"id": "f1", "name": "North Field", "open_from": "17:00", "open_until": "20:00"},
-    {"id": "f2", "name": "South Field", "open_from": "17:00", "open_until": "20:00"}
+    {"id": "f1", "name": "North Field", "open_from": "17:00", "open_until": "20:00",
+     "weekend_open_from": "09:00", "weekend_open_until": "20:00"},
+    {"id": "f2", "name": "South Field", "open_from": "17:00", "open_until": "20:00",
+     "weekend_open_from": "09:00", "weekend_open_until": "20:00"}
   ],
   "coaches": [
     {

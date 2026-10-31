@@ -688,6 +688,44 @@ def _coach_busy() -> list[Busy]:
     return busy
 
 
+def _field_hours(f: dict) -> tuple[time | None, time | None]:
+    """One daily window per Field: the union of weekday and weekend hours."""
+    starts = [time.fromisoformat(f[k]) for k in ("open_from", "weekend_open_from") if f.get(k)]
+    ends = [time.fromisoformat(f[k]) for k in ("open_until", "weekend_open_until") if f.get(k)]
+    return (min(starts) if starts else None, max(ends) if ends else None)
+
+
+def _ground_closed_busy() -> list[Busy]:
+    """Weekday hours outside a ground's weekday window, as field busy time.
+
+    A Field has one daily window, so a ground open longer on Sat/Sun
+    (weekend_open_from/until in demo/club.json) gets the widened window
+    and the extra hours are closed again on Mon-Fri here.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+
+    tz = ZoneInfo(TZ)
+    busy: list[Busy] = []
+    day = date.fromisoformat(CLUB["season_start"])
+    last = date.fromisoformat(CLUB["season_end"])
+    while day <= last:
+        if day.weekday() < 5:
+            for f in CLUB["fields"]:
+                if not (f.get("weekend_open_from") and f.get("open_from")):
+                    continue
+                wide_from, wide_until = _field_hours(f)
+                gaps = [(wide_from, time.fromisoformat(f["open_from"])),
+                        (time.fromisoformat(f["open_until"]), wide_until)]
+                for start_t, end_t in gaps:
+                    if start_t < end_t:
+                        busy.append(Busy(resource=f"field:{f['id']}",
+                                         start=_dt.combine(day, start_t, tzinfo=tz),
+                                         end=_dt.combine(day, end_t, tzinfo=tz),
+                                         reason="ground closed"))
+        day += _td(days=1)
+    return busy
+
+
 def _scheduling_end() -> date:
     """Last date "Plan the season" fills; later changes may use the whole season."""
     return date.fromisoformat(CLUB.get("scheduling_end") or CLUB["season_end"])
@@ -703,18 +741,13 @@ def club_problem(extra_busy: list[Busy] | None = None, *, plan_window: bool = Fa
     return Problem(
         teams=[Team(id=t["id"], name=t["name"]) for t in CLUB["teams"]],
         fields=[
-            Field(
-                id=f["id"],
-                name=f["name"],
-                open_from=time.fromisoformat(f["open_from"]) if f.get("open_from") else None,
-                open_until=time.fromisoformat(f["open_until"]) if f.get("open_until") else None,
-            )
+            Field(id=f["id"], name=f["name"], open_from=_field_hours(f)[0], open_until=_field_hours(f)[1])
             for f in CLUB["fields"]
         ],
         season_start=date.fromisoformat(CLUB["season_start"]),
         season_end=_scheduling_end() if plan_window else date.fromisoformat(CLUB["season_end"]),
         timezone=TZ,
-        busy=_coach_busy() + list(extra_busy or []),
+        busy=_coach_busy() + _ground_closed_busy() + list(extra_busy or []),
     )
 
 
