@@ -40,6 +40,10 @@ summary { cursor: pointer; font-weight: 600; padding: 0.35rem 0; }
 details ul { margin: 0.2rem 0 0.4rem; padding-left: 1.2rem; }
 li.changed, li.conflict { background: var(--red-bg); border-radius: 0.35rem; padding: 0.1rem 0.3rem; }
 pre { white-space: pre-wrap; font: inherit; font-size: 0.92rem; margin: 0.3rem 0; }
+.work td:first-child { width: 1.6rem; text-align: center; font-weight: 700; }
+.work .by { color: var(--muted); font-size: 0.88rem; }
+.work tr.ai td { background: #eef4fb; }
+.chip { display: inline-block; border: 1px solid var(--line); border-radius: 1rem; padding: 0.05rem 0.55rem; margin: 0.15rem 0.2rem 0 0; background: #fff; font-size: 0.88rem; }
 .notice { border-top: 1px solid var(--line); padding: 0.5rem 0; }
 #working { display: flex; gap: 0.6rem; align-items: center; background: #e7f3ec; border: 1px solid var(--green); color: var(--dark); padding: 0.6rem; border-radius: 0.5rem; margin: 0.6rem 0; font-weight: 600; }
 #working[hidden] { display: none; }
@@ -96,6 +100,7 @@ pre { white-space: pre-wrap; font: inherit; font-size: 0.92rem; margin: 0.3rem 0
 <div id="questions"></div>
 <div id="diff"></div>
 <div id="checks"></div>
+<details id="work"><summary>What the agent did</summary><div id="work-body"></div></details>
 <details><summary>Full schedule</summary><div id="calendar"></div></details>
 <details><summary>The assistant's explanation</summary><pre id="summary"></pre></details>
 </section>
@@ -110,7 +115,7 @@ pre { white-space: pre-wrap; font: inherit; font-size: 0.92rem; margin: 0.3rem 0
 </main>
 <script>
 "use strict";
-const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], ingested: null, club: null, approved: false, diff: null, busy: false, questions: [], lastRequest: "" };
+const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], ingested: null, club: null, approved: false, diff: null, busy: false, questions: [], lastRequest: "", trace: [], understood: [] };
 const $ = (id) => document.getElementById(id);
 const DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -176,8 +181,53 @@ function showProposal(p, trace, clarification, meta) {
   $("approval").innerHTML = ""; $("notices").innerHTML = "";
   $("summary").textContent = p.summary || "";
   $("review").hidden = false;
-  renderQuestions(); renderDiff(); renderChecks(p); renderCalendar(); syncButtons();
+  S.trace = trace || []; S.understood = (meta && meta.understood) || [];
+  renderQuestions(); renderDiff(); renderChecks(p); renderWork(); renderCalendar(); syncButtons();
   $("review").scrollIntoView({ block: "start" });
+}
+// What the agent did, step by step from its trace: blue rows are model calls, the rest is code.
+const MODEL_STEP = { understand: "Understood the request", edits: "Understood the changes", disruption: "Read the disruption", cancel_filter: "Read the cancellation", explain: "Wrote the summary" };
+const MODEL_DID = { understand: "Read your words (any language) into a strict, checked format.", edits: "Read your words (any language) into a list of changes, checked in code.", disruption: "Read which days and grounds are closed.", cancel_filter: "Read which sessions to cancel.", explain: "Explained the result in your language." };
+const ACTION = { create_once: "Add once", create_recurring: "Add weekly", move: "Move", cancel: "Cancel", block: "Close", change_rule: "Change rule" };
+function chip(c) {
+  const to = c.action === "block" || c.action === "cancel" ? "" : " → " + (c.placement === "solver picks" ? "any free slot" : c.placement) + (c.exactness !== "any" ? " (" + c.exactness + ")" : "");
+  return "<span class=\"chip\"><strong>" + esc(ACTION[c.action] || c.action) + "</strong> " + esc(c.target + to) + "</span>";
+}
+function renderWork() {
+  const p = S.proposal; if (!p) return;
+  const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+  const who = { meta: "Meta API", open: "Muse Spark (open weights)", mock: "Mock (scripted, no model call)" }[S.mode] || S.mode;
+  const code = "code, no AI", rows = [], seen = new Set();
+  const total = p.check_results.length, failed = p.check_results.filter((c) => !c.passed).length;
+  const placed = () => {
+    if (seen.has("placed")) return; seen.add("placed");
+    const d = S.diff, short = p.shortfalls.length ? ", " + p.shortfalls.length + " could not be placed (named above)" : "";
+    const what = S.base.length ? [d.moved.length + " moved", d.added.length + " added", d.cancelled.length + " cancelled", d.unchanged.length + " kept as they are"].join(", ") : plural(S.events.length, "session") + " placed";
+    rows.push(["Placed the times", "solver (" + code + ")", what + short]);
+  };
+  S.trace.forEach((s) => {
+    if ("messages" in s) {
+      const by = S.mode === "mock" ? who : (s.model || who) + " · " + (s.latency_ms / 1000).toFixed(1) + " s" + (s.total_tokens ? " · " + s.total_tokens.toLocaleString() + " tokens" : "");
+      rows.push([MODEL_STEP[s.step] || "Called the model", by, MODEL_DID[s.step] || "", true]);
+    } else if (s.step === "rules") rows.push(["Turned it into rules", code, plural(s.requirements, "team rule")]);
+    else if (s.step === "edit_plan") {
+      const chips = S.understood.map(chip).join("");
+      rows.push(["Turned it into a change list", code, plural(s.ops, "change") + (s.questions ? ", " + plural(s.questions, "question") + " for you" : "") + (chips ? "<br>" + chips : ""), false, true]);
+    } else if (s.step === "ingest") rows.push(["Used your files", code, [plural(s.games, "game"), plural(s.grounds, "ground window"), plural(s.coach_windows, "coach busy time")].join(", ")]);
+    else if (s.step === "disruption") rows.push(["Worked out what is closed", code, (s.closed_fields ? plural(s.closed_fields, "ground") : "every ground") + " closed, " + s.from + (s.to !== s.from ? " to " + s.to : "")]);
+    else if (["solve", "reschedule", "cancel"].includes(s.step)) placed();
+    else if (s.step === "checks" && !seen.has("checks")) { placed(); seen.add("checks"); rows.push(["Checked every session", code, (total - failed) + " / " + total + " checks passed (field double booking, team overlap, field hours, blackout dates, busy times)"]); }
+    else if (s.step === "verify" && !seen.has("verify")) {
+      seen.add("verify"); const found = S.trace.filter((v) => v.step === "verify").reduce((n, v) => n + (v.new_busy || 0), 0);
+      rows.push(["Asked the club's calendar", code, found ? plural(found, "coach busy time") + " found, re-planned around them" : "no clash with coach busy times"]);
+    } else if (s.step === "explain" && s.source === "deterministic") rows.push(["Wrote the summary", code, ""]);
+  });
+  if (!rows.length) { $("work").hidden = true; return; }
+  const last = S.approved ? ["Approved by you", "you", "Saved as the club's schedule."] : S.questions.length ? ["Waiting for your answer", "you", "Approve stays locked until the question is answered."] : failed ? ["Stopped", "you", "Approve stays locked until the conflicts are fixed."] : ["Waiting for you to approve", "you", "Nothing is saved until you press Approve."];
+  rows.push(last);
+  $("work").hidden = false;
+  $("work-body").innerHTML = "<table class=\"work\">" + rows.map((r, i) => "<tr" + (r[3] ? " class=\"ai\"" : "") + "><td>" + (i + 1) + "</td><td><strong>" + esc(r[0]) + "</strong><div class=\"by\">" + esc(r[1]) + "</div></td><td>" + (r[4] ? r[2] : esc(r[2])) + "</td></tr>").join("") + "</table>" +
+    "<p class=\"muted\">Blue rows used the AI model. Everything else is plain code: the model never picks a time.</p>";
 }
 function dayMonth(iso) { const [, m, d] = iso.split("-").map(Number); return d + " " + MONTH[m - 1]; }
 // Step 1: what Plan will build, straight from the club data, before anything runs.
@@ -338,7 +388,7 @@ async function approve() {
   try {
     await post("/api/approve", { proposal: S.proposal });
     const changed = noticeEvents();
-    S.approved = true; S.current = S.events.slice(); syncButtons();
+    S.approved = true; S.current = S.events.slice(); syncButtons(); renderWork();
     $("approval").innerHTML = "<p class=\"ok\">✓ Approved. " + S.events.length + " sessions are now the club's schedule.</p>";
     if (!changed.length) { $("notices").innerHTML = "<p class=\"muted\">Nothing changed for families, so no notice is needed.</p>"; return; }
     const teams = [...new Set(changed.map((e) => teamName(e.team_id)))];

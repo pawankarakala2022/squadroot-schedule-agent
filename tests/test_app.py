@@ -401,7 +401,11 @@ def test_frontend_three_buttons_plan_run_approve() -> None:
     assert 'id="working"' in html and 'class="spinner"' in html and "setBusy(true" in html and "setBusy(false)" in html
     # Approve drafts the family notices itself (no separate button).
     assert "/api/notices" in html and 'id="notices-btn"' not in html
-    # Nothing extra: no tabs, examples, reload, expand/minimize, trace or understood chips.
+    # What the agent did: one folded panel from the trace, model rows apart from code rows.
+    assert '<details id="work"><summary>What the agent did</summary>' in html and "function renderWork()" in html
+    assert html.index('id="checks"') < html.index('id="work"') < html.index("<summary>Full schedule</summary>")
+    assert "the model never picks a time" in html and "Waiting for you to approve" in html
+    # Nothing extra: no tabs, examples, reload, expand/minimize, raw trace dump or separate chips box.
     for gone in ('href="#plan"', "preset-rain", "reset-btn", "Expand all sessions", 'id="trace"', 'id="understood"', "Tap to select"):
         assert gone not in html, gone
 
