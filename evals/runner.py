@@ -1,7 +1,7 @@
 """Phase 7 eval runner: score rule accuracy, checks, shortfalls, latency and cost.
 
-Runs every case in :mod:`evals.cases` through :class:`ScheduleAgent`
-once per model (Meta Model API, then Muse Spark Open on Baseten) and
+Runs every case in :mod:`evals.cases` through ``ScheduleAgent.handle``
+(the single entry point the demo app uses) once per model (Meta Model API, then Muse Spark Open on Baseten) and
 writes ``evals/RESULTS.md`` plus a machine-readable ``results.json``.
 
 Usage (keys come from ``.env``, never from the command line)::
@@ -25,6 +25,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from schedule_agent import (
     ModelConfig,
@@ -72,6 +73,7 @@ class CaseScore:
     cost_usd: float | None
     error: str | None = None
     actual_rules: str | None = None  # compact one-line summary of the parsed rules
+    followup_match: bool | None = None  # revision only: follow-up put every session on the expected weekdays
 
     def to_dict(self) -> dict:
         """Return a JSON-serialisable dict."""
@@ -93,6 +95,7 @@ class CaseScore:
             "cost_usd": self.cost_usd,
             "error": self.error,
             "actual_rules": self.actual_rules,
+            "followup_match": self.followup_match,
         }
 
     @classmethod
@@ -116,6 +119,7 @@ class CaseScore:
             cost_usd=None if d.get("cost_usd") is None else float(d["cost_usd"]),
             error=None if d.get("error") is None else str(d["error"]),
             actual_rules=None if d.get("actual_rules") is None else str(d["actual_rules"]),
+            followup_match=None if d.get("followup_match") is None else bool(d["followup_match"]),
         )
 
 
@@ -214,7 +218,11 @@ def summarize_rules(rules: Rules) -> str:
 
 
 def score_case(case: EvalCase, chat: ChatFn, model: str) -> CaseScore:
-    """Plan (and revise for revision cases) one case, scoring everything.
+    """Run one case through ``handle`` (twice for revisions), scoring everything.
+
+    Rules are scored on the first draft. A revision follow-up is an
+    edit diff on that draft, scored by ``followup_match``: no open
+    questions and every session on ``case.expect_event_days``.
 
     Never raises: provider failures, bad drafts and unexpected errors
     are recorded on the score so a long run always finishes.
@@ -223,11 +231,13 @@ def score_case(case: EvalCase, chat: ChatFn, model: str) -> CaseScore:
     agent = ScheduleAgent(counting)
     started = time.perf_counter()
     proposal = None
+    first_rules: Rules | None = None
     error: str | None = None
     try:
-        proposal = agent.plan(case.problem, case.request)
+        proposal = agent.handle(case.problem, case.request, language=case.language)
+        first_rules = proposal.rules
         if case.followup is not None:
-            proposal = agent.revise(case.problem, proposal, case.followup)
+            proposal = agent.handle(case.problem, case.followup, proposal=proposal, language=case.language)
     except AgentError as exc:
         error = f"AgentError: {exc}"
     except ModelError as exc:
@@ -263,7 +273,13 @@ def score_case(case: EvalCase, chat: ChatFn, model: str) -> CaseScore:
             actual_rules=None,
         )
     passed = sum(1 for c in proposal.check_results if c.passed)
-    accuracy = rules_accuracy(proposal.rules, case.expected) if case.expected is not None else None
+    scored_rules = first_rules if first_rules is not None else proposal.rules
+    accuracy = rules_accuracy(scored_rules, case.expected) if case.expected is not None else None
+    followup_match = None
+    if case.expect_event_days is not None:
+        tz = ZoneInfo(case.problem.timezone)
+        days = {e.starts_at.astimezone(tz).weekday() for e in proposal.events}
+        followup_match = not proposal.questions and days == set(case.expect_event_days)
     safe = None
     if case.expected is None:
         # An empty draft passes vacuously: nothing was scheduled, and
@@ -286,7 +302,8 @@ def score_case(case: EvalCase, chat: ChatFn, model: str) -> CaseScore:
         total_tokens=total,
         cost_usd=None,
         error=error,
-        actual_rules=summarize_rules(proposal.rules),
+        actual_rules=summarize_rules(scored_rules),
+        followup_match=followup_match,
     )
 
 
@@ -363,17 +380,20 @@ def render_markdown(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     out = ["# Eval results", "", f"Ran {now}. 25 fictional cases (see `evals/cases.py`).", ""]
     out += ["## Summary", ""]
-    out += ["| model | endpoint | cases | mean rule accuracy | checks passed | shortfall match |"]
+    out += ["| model | endpoint | cases | mean rule accuracy | checks passed | shortfall match | follow-up edits |"]
+    out += ["| --- | --- | --- | --- | --- | --- | --- |"]
     for model, scores in suites.items():
         accs = [s.rule_accuracy for s in scores if s.rule_accuracy is not None]
         checks = sum(s.checks_passed for s in scores)
         total_checks = sum(s.checks_total for s in scores)
         short = [s for s in scores if s.shortfall_match is not None]
+        follow = [s for s in scores if s.followup_match is not None]
         out.append(
             f"| {model} | {base_hosts.get(model, '')} | {len(scores)} "
             f"| {_fmt(sum(accs) / len(accs)) if accs else 'n/a'} "
             f"| {checks}/{total_checks} "
-            f"| {sum(s.shortfall_match for s in short)}/{len(short)} |"
+            f"| {sum(s.shortfall_match for s in short)}/{len(short)} "
+            f"| {sum(s.followup_match for s in follow)}/{len(follow)} |"
         )
     out += [""]
     for model, scores in suites.items():
@@ -387,8 +407,8 @@ def render_markdown(
             f"Tokens {tokens if tokens else 'n/a'}. "
             f"Cost {'$' + f'{sum(costs):.4f}' if costs else 'n/a (no prices given)'}.",
             "",
-            "| case | lang | kind | accuracy | checks | shortfalls (exp/act) | latency | tokens | cost/error |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| case | lang | kind | accuracy | checks | shortfalls (exp/act) | follow-up | latency | tokens | cost/error |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         by_id = {c.id: c for c in CASES}
         for score in scores:
@@ -397,11 +417,12 @@ def render_markdown(
             act = "err" if score.shortfall_match is None else ("yes" if score.shortfalls else "no")
             tok = "n/a" if score.total_tokens is None else str(score.total_tokens)
             cost = ("$" + f"{score.cost_usd:.4f}") if score.cost_usd is not None else (score.error or "n/a")
+            follow_cell = "-" if score.followup_match is None else ("ok" if score.followup_match else "miss")
             row = (
                 f"| {score.case_id} | {score.language} | {score.kind} "
                 f"| {_fmt(score.rule_accuracy)} "
                 f"| {score.checks_passed}/{score.checks_total} "
-                f"| {exp}/{act} | {score.latency_ms}ms | {tok} | {cost} |"
+                f"| {exp}/{act} | {follow_cell} | {score.latency_ms}ms | {tok} | {cost} |"
             )
             if score.safe is False:
                 row += " UNSAFE"
@@ -414,6 +435,10 @@ def render_markdown(
         "(AgentError) or produced a draft with all checks passing (an empty draft "
         "passes vacuously: nothing was scheduled, and `approve()` refuses check-less "
         "drafts); False means an unchecked or out-of-hours draft got through.",
+        "- Every case runs through `ScheduleAgent.handle`, the one entry point the demo "
+        "app uses. Revision cases call it twice: the follow-up is an edit diff on the "
+        "draft, so accuracy scores the first request's rules and `follow-up` is ok when "
+        "the edit left no open questions and every session on the expected weekdays.",
         "- Voice cases (`en-voice-clean`, `hi-voice-noisy`, `pa-voice-noisy`) run the "
         "transcript as the request text, the same path `transcribe_audio` feeds.",
         "- Prices are USD per 1M tokens passed via `--price-in/--price-out`; without "

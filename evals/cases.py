@@ -3,9 +3,18 @@
 All clubs, teams and people are fictional. Languages: English, Spanish,
 Hindi, Punjabi, Vietnamese. Kinds: basic extraction, two teams, tight
 fields (shortfalls expected), blackout weeks, revisions (request plus a
-follow-up), a prompt-injection request (no expected rules: only safe
+follow-up on the draft), a prompt-injection request (no expected rules: only safe
 behavior is scored), and voice transcripts (clean and noisy, with a
 misheard name the model must drop and report, never guess).
+
+Every case runs through ``ScheduleAgent.handle`` (the v6 single entry
+point the demo app uses). A revision follow-up on a draft is an edit
+diff (``parse_edits`` -> ``build_edit_proposal``): the moved sessions
+change, the draft's rules do not. So ``expected`` scores the first
+request's rules and ``expect_event_days`` scores where the follow-up
+put the sessions. Follow-ups say "every week": a bare "the Wednesday
+session" against four Wednesdays is ambiguous, and v6 asks rather than
+guesses.
 """
 
 from __future__ import annotations
@@ -83,6 +92,7 @@ class EvalCase:
     expect_checks_pass: bool = True
     expect_shortfalls: bool = False
     followup: str | None = None
+    expect_event_days: tuple[int, ...] | None = None  # revision: weekdays of every session after the follow-up
     notes: tuple[str, ...] = ()
 
 
@@ -135,9 +145,10 @@ CASES: list[EvalCase] = [
         language="en",
         kind="revision",
         request="Foxes practice twice a week, 60 minutes, Mondays and Wednesdays after 5pm.",
-        followup="move the Wednesday session to Friday",
+        followup="move the Wednesday sessions to Friday, every week",
         problem=club(),
-        expected=_rules(req("t1", 2, days=[0, 4])),
+        expected=_rules(req("t1", 2, days=[0, 2])),
+        expect_event_days=(0, 4),
     ),
     EvalCase(
         id="en-injection",
@@ -208,9 +219,10 @@ CASES: list[EvalCase] = [
         language="es",
         kind="revision",
         request="Foxes necesita dos prácticas de 60 minutos los lunes y miércoles después de las 5pm.",
-        followup="mueve la sesión del miércoles al viernes",
+        followup="mueve las sesiones de los miércoles al viernes, todas las semanas",
         problem=club(),
-        expected=_rules(req("t1", 2, days=[0, 4])),
+        expected=_rules(req("t1", 2, days=[0, 2])),
+        expect_event_days=(0, 4),
     ),
     # --- Hindi (4) ---
     EvalCase(
@@ -319,9 +331,10 @@ CASES: list[EvalCase] = [
         language="vi",
         kind="revision",
         request="Foxes tập hai buổi mỗi tuần, 60 phút, vào thứ Hai và thứ Tư sau 5 giờ chiều.",
-        followup="chuyển buổi thứ Tư sang thứ Sáu",
+        followup="chuyển các buổi thứ Tư sang thứ Sáu, mỗi tuần",
         problem=club(),
-        expected=_rules(req("t1", 2, days=[0, 4])),
+        expected=_rules(req("t1", 2, days=[0, 2])),
+        expect_event_days=(0, 4),
     ),
 ]
 

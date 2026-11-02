@@ -14,10 +14,10 @@ human to approve before anything changes.
 This is not a mock-only project. The mock mode exists so anyone can run it without a key;
 the evidence below is from live Meta models.
 
-- **Live eval (2026-10-28):** `muse-spark-1.3` at `api.meta.ai` ran all 25 fictional cases
+- **Live eval (2026-11-02, through `handle()`):** `muse-spark-1.3` at `api.meta.ai` ran all 25 fictional cases
   (English, Spanish, Hindi, Punjabi, Vietnamese; tight fields, blackouts, revisions, a
-  prompt-injection request): mean rule accuracy **1.00**, **834/834** checks passed,
-  **25/25** shortfall matches, injection case safe. Full table: [evals/RESULTS.md](evals/RESULTS.md).
+  prompt-injection request): mean rule accuracy **1.00**, **1002/1002** checks passed,
+  **25/25** shortfall matches, **3/3** follow-up edits applied, injection case safe. Full table: [evals/RESULTS.md](evals/RESULTS.md).
 - **Live trace (captured 2026-10-28, demo club preset request, one Meta API call):**
 
   ```text
@@ -33,10 +33,10 @@ the evidence below is from live Meta models.
   (open weights, same agent). The client refuses any `-contributor` model id.
 - **Offline verification:** `python -m pytest` → **182 passed**, including the public-interface
   contract test (`tests/test_interface.py`) that a host app depends on.
-- **Open weights (2026-10-28):** the same 25 cases on Muse Spark Open via Baseten
-  (`meta-models/muse-spark-open` at `inference.baseten.co`): mean rule accuracy **0.94**,
-  **834/834** checks, **25/25** shortfalls, mean latency 15.9s/case. The only misses were a
-  duplicated requirement in three blackout cases; placements were unaffected. Both models
+- **Open weights (2026-11-02):** the same 25 cases on Muse Spark Open via Baseten
+  (`meta-models/muse-spark-open` at `inference.baseten.co`): mean rule accuracy **1.00**,
+  **834/834** checks, **25/25** shortfalls, **3/3** follow-up edits (two cases needed one
+  retry after a provider/validation failure; first run kept in `evals/RESULTS_OPEN.md`). Both models
   are side by side in [evals/RESULTS.md](evals/RESULTS.md).
 - **How this was judged internally:** a three-stage judging evaluation (pass/fail
   viability, 0–10 rubric scoring, live-video final) was run against this repo; its gap

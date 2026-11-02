@@ -158,3 +158,32 @@ def test_case_scores_round_trip() -> None:
         actual_rules="t1 practice 1x/wk 60min",
     )
     assert CaseScore.from_dict(json.loads(json.dumps(score.to_dict()))) == score
+
+
+def test_revision_followup_runs_as_edit_diff_through_handle() -> None:
+    case = next(c for c in CASES if c.id == "en-revision")
+    move = {
+        "ops": [{
+            "action": "move",
+            "target": {"session_labels": [], "team_aliases": ["T1"], "field_aliases": [], "weekdays": [2],
+                       "date_from": "", "date_to": "", "event_types": ["practice"]},
+            "to": {"date": "", "start_time": "", "field_alias": "", "weekdays": [4],
+                   "earliest_start": "", "latest_end": "", "exactness": "any"},
+            "team_alias": "", "event_type": "", "duration_minutes": 0, "sessions_per_week": 0,
+            "title": "", "notes": [],
+        }],
+        "questions": [], "notes": [],
+    }
+
+    def chat(messages, *, response_format=None, usage_out=None):  # type: ignore[no-untyped-def]
+        if response_format is None:
+            return "Fake summary."
+        if response_format["json_schema"]["name"] == "edit_plan":
+            return json.dumps(move)
+        return _expected_json(case)
+
+    score = score_case(case, chat, "fake-model")
+    assert score.error is None
+    assert score.rule_accuracy == 1.0  # first request's rules
+    assert score.followup_match is True  # Wednesdays moved to Friday, Mondays kept
+    assert score.checks_passed == score.checks_total > 0
