@@ -321,11 +321,14 @@ function renderQuestions() {
 function syncButtons() {
   const p = S.proposal, failed = p ? p.check_results.filter((c) => !c.passed).length : 0, open = S.questions.length;
   $("approve-btn").disabled = S.busy || !p || failed > 0 || open > 0 || S.approved;
-  $("approve-hint").textContent = !p ? "Plan or run something first." : S.approved ? "Approved." : open ? "Answer the question above first." : failed ? "Fix the conflicts above first." : (S.base.length ? "Everything checks out. Approve to make it the club's schedule." : "Check the weekly pattern above. If it is right, approve it as the club's schedule.");
+  $("approve-hint").textContent = S.busy ? "Working on your request…" : !p ? "Plan or run something first." : S.approved ? "Approved." : open ? "Answer the question above first." : failed ? "Fix the conflicts above first." : (S.base.length ? "Everything checks out. Approve to make it the club's schedule." : "Check the weekly pattern above. If it is right, approve it as the club's schedule.");
   $("plan-hint").textContent = S.current.length || S.events.length ? "Starts the season over from the club's rules. Your changes so far will be replaced." : "Builds every team's weekly practices from the club's rules.";
 }
 function setBusy(on, stage) {
   S.busy = on; $("working").hidden = !on;
+  // The last result is hidden while a request runs, so it is never mistaken for the new one; a failure brings it back.
+  $("review").hidden = on || !S.proposal;
+  if (on) $("approval").innerHTML = "";
   if (stage) $("working-text").textContent = stage;
   ["plan-btn", "run-btn", "record-btn"].forEach((id) => { $(id).disabled = on; });
   if (!on) $("record-btn").disabled = S.mode === "mock";
