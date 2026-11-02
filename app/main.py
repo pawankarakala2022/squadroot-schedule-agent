@@ -1374,6 +1374,47 @@ def _effective_games(body: dict):  # type: ignore[no-untyped-def]
     return games if games.get("games") else None
 
 
+# Schema name of each file-reading call -> trace step shown on the page.
+READ_STEPS = {"league_games": "read_games", "grounds_availability": "read_availability"}
+
+
+def _recording_chat(inner: ChatFn, trace: list) -> ChatFn:
+    """Wrap ``inner`` so each file-reading model call appends a trace step.
+
+    Same step shape as the agent's trace, so the page shows the reading
+    of PDFs and screenshots as model rows ahead of the Run steps.
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(inner).parameters
+        forwards = "usage_out" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+    except (TypeError, ValueError):
+        forwards = False
+
+    def chat(messages: list, *, response_format=None, usage_out=None) -> str:  # type: ignore[no-untyped-def]
+        captured: dict = {}
+        started = monotonic()
+        if forwards:
+            text = inner(messages, response_format=response_format, usage_out=captured)
+        else:
+            text = inner(messages, response_format=response_format)
+        name = ((response_format or {}).get("json_schema") or {}).get("name", "")
+        step = {
+            "step": READ_STEPS.get(name, "read_files"),
+            "messages": len(messages),
+            "latency_ms": int((monotonic() - started) * 1000),
+        }
+        for key in ("model", "prompt_tokens", "completion_tokens", "total_tokens"):
+            step[key] = captured.get(key)
+        trace.append(step)
+        if isinstance(usage_out, dict):
+            usage_out.update(captured)
+        return text
+
+    return chat
+
+
 def ingest_result(mode: str, text: str, files: list) -> dict:  # type: ignore[no-untyped-def]
     """Normalize typed text plus any uploaded files into one intake.
 
@@ -1389,10 +1430,11 @@ def ingest_result(mode: str, text: str, files: list) -> dict:  # type: ignore[no
         Attachment(filename=name or "file", mime_type=mime or "", data=data)
         for name, mime, data in files
     ]
+    trace: list = []
     try:
         if mode == "mock":
             ingested = ingest_request(
-                problem, text=text or None, attachments=attachments, chat=mock_chat,
+                problem, text=text or None, attachments=attachments, chat=_recording_chat(mock_chat, trace),
                 transcribe_fn=lambda _audio, _name: SAMPLE_TRANSCRIPT,
             )
         else:
@@ -1402,7 +1444,7 @@ def ingest_result(mode: str, text: str, files: list) -> dict:  # type: ignore[no
                 voice_config = VoiceConfig.from_env()
             ingested = ingest_request(
                 problem, text=text or None, attachments=attachments,
-                chat=make_chat(mode), voice_config=voice_config,
+                chat=_recording_chat(make_chat(mode), trace), voice_config=voice_config,
             )
     except HTTPException:
         raise
@@ -1412,6 +1454,7 @@ def ingest_result(mode: str, text: str, files: list) -> dict:  # type: ignore[no
         "ingested": ingested.to_dict(),
         "busy": [b.to_dict() for b in ingested.busy(problem)],
         "busy_count": len(ingested.busy(problem)),
+        "trace": trace,
         "mock": mode == "mock",
         "note": "Mock mode: files read with scripted answers, not the real assistant." if mode == "mock" else "",
     }

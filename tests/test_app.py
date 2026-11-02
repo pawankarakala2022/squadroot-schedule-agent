@@ -28,6 +28,7 @@ from app.main import (
     club_problem,
     get_calendar,
     get_club,
+    ingest_result,
     index,
     make_chat,
     mock_chat,
@@ -408,6 +409,16 @@ def test_frontend_three_buttons_plan_run_approve() -> None:
     # Nothing extra: no tabs, examples, reload, expand/minimize, raw trace dump or separate chips box.
     for gone in ('href="#plan"', "preset-rain", "reset-btn", "Expand all sessions", 'id="trace"', 'id="understood"', "Tap to select"):
         assert gone not in html, gone
+
+
+def test_ingest_reports_its_model_calls() -> None:
+    """Reading an attached file is a model step, so the page can show it."""
+    from pathlib import Path
+
+    png = (Path(__file__).resolve().parents[1] / "demo" / "schedule_tiny.png").read_bytes()
+    out = ingest_result("mock", "", [("schedule.png", "image/png", png)])
+    assert [s["step"] for s in out["trace"]] == ["read_games", "read_availability"]
+    assert all("messages" in s and "latency_ms" in s for s in out["trace"])
 
 
 def test_mock_voice_and_vision() -> None:

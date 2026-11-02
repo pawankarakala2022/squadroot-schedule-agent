@@ -115,7 +115,7 @@ pre { white-space: pre-wrap; font: inherit; font-size: 0.92rem; margin: 0.3rem 0
 </main>
 <script>
 "use strict";
-const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], ingested: null, club: null, approved: false, diff: null, busy: false, questions: [], lastRequest: "", trace: [], understood: [] };
+const S = { mode: "mock", proposal: null, events: [], current: [], base: [], extraBusy: [], ingested: null, readTrace: [], club: null, approved: false, diff: null, busy: false, questions: [], lastRequest: "", trace: [], understood: [] };
 const $ = (id) => document.getElementById(id);
 const DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -134,7 +134,7 @@ function setModeNote() {
   $("request").disabled = mock; $("record-btn").disabled = mock || S.busy; $("ingest-files").disabled = mock;
   $("ingest-files").parentElement.classList.toggle("off", mock);
   $("run-hint").textContent = mock ? "Pick a ready-made request, then press Run." : "Type it, say it, or attach a league schedule (PDF or photo). Any language.";
-  if (mock) { S.ingested = null; S.extraBusy = []; $("ingest-files").value = ""; $("input-status").textContent = ""; }
+  if (mock) { S.ingested = null; S.readTrace = []; S.extraBusy = []; $("ingest-files").value = ""; $("input-status").textContent = ""; }
 }
 function mockGames() {
   // Fictional Foxes league games, already matched to club ids: four Saturdays, plus one
@@ -181,13 +181,13 @@ function showProposal(p, trace, clarification, meta) {
   $("approval").innerHTML = ""; $("notices").innerHTML = "";
   $("summary").textContent = p.summary || "";
   $("review").hidden = false;
-  S.trace = trace || []; S.understood = (meta && meta.understood) || [];
+  S.trace = (S.ingested ? S.readTrace : []).concat(trace || []); S.understood = (meta && meta.understood) || [];
   renderQuestions(); renderDiff(); renderChecks(p); renderWork(); renderCalendar(); syncButtons();
   $("review").scrollIntoView({ block: "start" });
 }
 // What the agent did, step by step from its trace: blue rows are model calls, the rest is code.
-const MODEL_STEP = { understand: "Understood the request", edits: "Understood the changes", disruption: "Read the disruption", cancel_filter: "Read the cancellation", explain: "Wrote the summary" };
-const MODEL_DID = { understand: "Read your words (any language) into a strict, checked format.", edits: "Read your words (any language) into a list of changes, checked in code.", disruption: "Read which days and grounds are closed.", cancel_filter: "Read which sessions to cancel.", explain: "Explained the result in your language." };
+const MODEL_STEP = { understand: "Understood the request", edits: "Understood the changes", disruption: "Read the disruption", cancel_filter: "Read the cancellation", explain: "Wrote the summary", read_games: "Read the games in your file", read_availability: "Read availability in your file" };
+const MODEL_DID = { understand: "Read your words (any language) into a strict, checked format.", edits: "Read your words (any language) into a list of changes, checked in code.", disruption: "Read which days and grounds are closed.", cancel_filter: "Read which sessions to cancel.", read_games: "Read league games (teams, grounds, dates, times) from the PDF or photo; names matched exactly in code.", read_availability: "Read ground hours and coach busy times from the PDF or photo; matched exactly in code.", explain: "Explained the result in your language." };
 const ACTION = { create_once: "Add once", create_recurring: "Add weekly", move: "Move", cancel: "Cancel", block: "Close", change_rule: "Change rule" };
 function chip(c) {
   const to = c.action === "block" || c.action === "cancel" ? "" : " → " + (c.placement === "solver picks" ? "any free slot" : c.placement) + (c.exactness !== "any" ? " (" + c.exactness + ")" : "");
@@ -212,7 +212,8 @@ function renderWork() {
     } else if (s.step === "rules") rows.push(["Turned it into rules", code, plural(s.requirements, "team rule")]);
     else if (s.step === "edit_plan") {
       const chips = S.understood.map(chip).join("");
-      rows.push(["Turned it into a change list", code, plural(s.ops, "change") + (s.questions ? ", " + plural(s.questions, "question") + " for you" : "") + (chips ? "<br>" + chips : ""), false, true]);
+      const fileGames = !s.ops && S.ingested ? S.ingested.games.games.length : 0;
+      rows.push(["Turned it into a change list", code, (fileGames ? "No typed changes; the " + plural(fileGames, "game") + " read from your file went in as fixed events" : plural(s.ops, "change")) + (s.questions ? ", " + plural(s.questions, "question") + " for you" : "") + (chips ? "<br>" + chips : ""), false, true]);
     } else if (s.step === "ingest") rows.push(["Used your files", code, [plural(s.games, "game"), plural(s.grounds, "ground window"), plural(s.coach_windows, "coach busy time")].join(", ")]);
     else if (s.step === "disruption") rows.push(["Worked out what is closed", code, (s.closed_fields ? plural(s.closed_fields, "ground") : "every ground") + " closed, " + s.from + (s.to !== s.from ? " to " + s.to : "")]);
     else if (["solve", "reschedule", "cancel"].includes(s.step)) placed();
@@ -370,7 +371,7 @@ async function run() {
     if (S.proposal && !S.approved) payload.proposal = S.proposal;
     if (calendar.length) payload.events = calendar;
     await runStream("run", payload);
-    S.ingested = null; S.extraBusy = []; $("ingest-files").value = ""; $("input-status").textContent = "";
+    S.ingested = null; S.readTrace = []; S.extraBusy = []; $("ingest-files").value = ""; $("input-status").textContent = "";
   } catch (err) { fail(err.message); } finally { setBusy(false); }
 }
 // Families hear only what changed since the last approval (a new season is announced in full).
@@ -463,7 +464,7 @@ async function readFiles() {
     list.forEach((f) => fd.append("files", f));
     const r = await fetch("/api/ingest", { method: "POST", body: fd }); const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || "Could not read those files.");
-    S.ingested = j.ingested; S.extraBusy = j.busy || [];
+    S.ingested = j.ingested; S.readTrace = j.trace || []; S.extraBusy = j.busy || [];
     if (j.ingested.text) $("request").value = j.ingested.text;
     const g = j.ingested.games.games.length, gr = j.ingested.availability.grounds.length + j.ingested.availability.coach.length;
     const parts = []; if (g) parts.push(g + " game" + (g === 1 ? "" : "s")); if (gr) parts.push(gr + " availability row" + (gr === 1 ? "" : "s"));
