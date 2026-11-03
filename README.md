@@ -2,12 +2,12 @@
 
 A club operations agent for sports clubs, built on Meta's Muse models.
 
-A sports club manager describes scheduling work in plain words, by voice, or with a photo of the league's
-game schedule, in any language. The agent drafts a conflict-free schedule, proves every event passes
+A sports club manager describes scheduling work in plain words, by voice, or with a photo or PDF of the
+league's game schedule, in any language. The agent drafts a conflict-free schedule, proves every event passes
 its checks, explains the result, drafts the family notice in each family's language, and waits for a
 human to approve before anything changes.
 
-> Status: in progress for the Meta Global AI Developer Hackathon (Oct 26 - Nov 4, 2026).
+> Built for the Meta Global AI Developer Hackathon (Oct 26 - Nov 4, 2026), Startups track.
 
 ## For judges — 60-second proof
 
@@ -31,7 +31,7 @@ the evidence below is from live Meta models.
 - **Meta models in the loop:** Muse Spark (understanding, schedule-photo reading,
   explanations, family notices), Muse Voice Transcribe (voice notes), and Muse Spark Open
   (open weights, same agent). The client refuses any `-contributor` model id.
-- **Offline verification:** `python -m pytest` → **182 passed**, including the public-interface
+- **Offline verification:** `python -m pytest` → **265 passed**, including the public-interface
   contract test (`tests/test_interface.py`) that a host app depends on.
 - **Open weights (2026-11-02):** the same 25 cases on Muse Spark Open via Baseten
   (`meta-models/muse-spark-open` at `inference.baseten.co`): mean rule accuracy **1.00**,
@@ -40,8 +40,8 @@ the evidence below is from live Meta models.
   are side by side in [evals/RESULTS.md](evals/RESULTS.md).
 - **How this was judged internally:** a three-stage judging evaluation (pass/fail
   viability, 0–10 rubric scoring, live-video final) was run against this repo; its gap
-  checklist drove the work above. The remaining gaps are deployment-free: feedback from
-  sports club managers and the 3-minute demo video.
+  checklist drove the work above. The remaining gap is feedback from real sports club
+  managers.
 
 ## What was built during the hackathon
 
@@ -56,7 +56,7 @@ verified entirely from this repo, with fictional demo data.
 
 | Model | Used for |
 |---|---|
-| Muse Spark (Meta Model API) | understanding requests, reading schedule images, explaining plans, family notices |
+| Muse Spark (Meta Model API) | understanding requests, reading schedule photos and PDFs, explaining plans, family notices |
 | Muse Voice Transcribe | voice notes from the field |
 | Muse Spark Open (open weights, via Baseten) | the same agent on open weights; side-by-side evals |
 | Muse Code | coding agent used to build this repo |
