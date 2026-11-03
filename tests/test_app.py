@@ -504,3 +504,60 @@ def test_spanish_names_stay_english_and_language_detected() -> None:
     assert _request_language({"request": "Foxes practice on Thursdays"}) == "en"
     html = index().path.read_text(encoding="utf-8")
     assert "correctedRequest(a)" in html and "ES_NAMES" in html  # answers correct the request in place
+
+
+def test_saved_games_do_not_clash_with_their_own_busy() -> None:
+    """The reported upload: Foxes v Gamblers, Saturdays 09:00 on South Field.
+
+    Once the games are in the calendar, the page can send their league busy
+    again (extra_busy from /api/ingest) on a later request without the games;
+    a saved game must not fail against its own busy, but a practice there must.
+    """
+    from app.main import api_run
+    from schedule_agent import ScheduleImport, games_to_busy
+    from schedule_agent.checks import run_checks
+    from schedule_agent import Busy, ProposedEvent, Rules
+
+    games = {"games": [
+        {"date": d, "start": "09:00", "home": "Foxes", "away": "Gamblers", "field": "South Field",
+         "home_id": "t1", "away_id": None, "field_id": "f2", "matched": False,
+         "blocks_time": True, "note": "unknown team 'Gamblers'; row kept, never guessed."}
+        for d in ("2026-11-07", "2026-11-14", "2026-11-21", "2026-11-28")
+    ], "notes": []}
+    own_busy = [b.to_dict() for b in games_to_busy(ScheduleImport.from_dict(games), club_problem())]
+    events = api_plan({"mode": "mock", "request": PRESETS["plan_request"]})["proposal"]["events"]
+    ingested = {"text": "", "games": games, "availability": {"grounds": [], "coach": [], "notes": []},
+                "sources": [], "notes": []}
+    added = api_run({"mode": "mock", "request": "", "events": events, "ingested": ingested, "extra_busy": own_busy})
+    saved = added["proposal"]["events"]
+    assert sum(e["event_type"] == "game" for e in saved) == 4
+    assert all(c["passed"] for c in added["proposal"]["check_results"])
+
+    later = api_run({"mode": "mock", "events": saved, "extra_busy": own_busy,
+                     "request": "Rain Thursday November 12, North Field is closed."})
+    failed = [c for c in later["proposal"]["check_results"] if not c["passed"]]
+    assert failed == [], failed
+
+    # A practice on the game's slot is still a real clash.
+    busy = [Busy.from_dict(b) for b in own_busy]
+    game = next(e for e in saved if e["event_type"] == "game")
+    practice = ProposedEvent.from_dict(dict(game, event_type="practice", title="Foxes practice"))
+    reasons = [c.reason for c in run_checks(club_problem(busy), Rules(), [practice]) if not c.passed]
+    assert reasons == ["Foxes is not free at this time (league game)."]
+
+
+def test_busy_check_names_the_team_or_ground_and_why() -> None:
+    """A failed busy check says which team/ground and why, never a raw id."""
+    from schedule_agent import Busy, ProposedEvent, Rules
+    from schedule_agent.checks import run_checks
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(CLUB["timezone"])
+    start, end = datetime(2026, 11, 7, 9, tzinfo=tz), datetime(2026, 11, 7, 10, tzinfo=tz)
+    ev = ProposedEvent(team_id="t1", field_id="f2", event_type="game", title="Foxes v Gamblers", starts_at=start, ends_at=end)
+    team = club_problem([Busy(resource="team:t1", start=start, end=end, reason="league game")])
+    ground = club_problem([Busy(resource="field:f2", start=start, end=end, reason="ground closed")])
+    reason = lambda p: next(c.reason for c in run_checks(p, Rules(), [ev]) if c.check == "busy")
+    assert reason(team) == "Foxes is not free at this time (league game)."
+    assert reason(ground) == "South Field is not available at this time (ground closed)."

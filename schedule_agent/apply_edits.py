@@ -784,8 +784,12 @@ class _Builder:
         else:
             rules = Rules(requirements=list(self.derived_requirements), min_gap_days=0, notes=notes)
         # Games are checked as events (a clash shows as a double booking),
-        # not against their own busy, or a game would fail against itself.
-        checking_busy = [b for b in self._base_busy() if b not in self.game_busy]
+        # not against their own busy, or a game would fail against itself --
+        # also a saved game whose league busy the host sends again.
+        own = {(r, e.starts_at, e.ends_at) for e in events if e.event_type == "game"
+               for r in (f"team:{e.team_id}", f"field:{e.field_id}")}
+        checking_busy = [b for b in self._base_busy() if b not in self.game_busy
+                         and not (b.reason == "league game" and (b.resource, b.start, b.end) in own)]
         checking_problem = _rebuild(self.problem, checking_busy)
         if self.ground_unchecked:
             checking_problem = _ground_unchecked(self.problem, [b for b in checking_busy if not b.resource.startswith("field:")])

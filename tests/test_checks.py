@@ -120,7 +120,7 @@ def test_busy_caught() -> None:
     events = [_event("t1", "f1", 8, time(17, 30), time(18, 30))]
     got = _by_check(run_checks(_problem(), _rules(), events))
     assert not got[("busy", 0)].passed
-    assert "busy" in got[("busy", 0)].reason
+    assert got[("busy", 0)].reason == "U12 is not free at this time (already booked)."
     for check in ("field_double_booking", "team_overlap", "field_hours", "blackout_dates", "minimum_gap"):
         assert got[(check, 0)].passed
 

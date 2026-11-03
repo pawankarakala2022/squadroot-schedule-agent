@@ -1,5 +1,20 @@
 # Changelog
 
+## v6.3.2 (2026-11-02)
+
+Bug fix, no interface change: a saved league game no longer conflicts
+with itself.
+
+- A game already in the calendar was checked against its own league
+  busy time when the host sent that busy again without the games (the
+  demo page does this after a schedule photo upload), so every game
+  failed with "Team 't1' is busy at this time". Checks now skip busy
+  that is exactly a game event's own league busy (same team or field,
+  same start and end); a practice in that slot still fails.
+- Failed busy checks name the team or ground and give the busy reason
+  instead of a raw id: "Foxes is not free at this time (league game)",
+  "South Field is not available at this time (ground closed)".
+
 ## v6.3.1 (2026-10-30)
 
 Bug fix, no interface change: a weekly change limited to a period no

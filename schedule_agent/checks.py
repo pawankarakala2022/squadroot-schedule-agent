@@ -102,9 +102,10 @@ def run_checks(problem: Problem, rules: Rules, events: list[ProposedEvent]) -> l
     # the checked events' date range: an event only inspects busy times
     # touching its own day (plus the previous day, for intervals that
     # cross midnight).
-    team_busy_day: dict[tuple[str, object], list[tuple[datetime, datetime]]] = {}
-    field_busy_day: dict[tuple[str, object], list[tuple[datetime, datetime]]] = {}
-    known_teams = {t.id for t in problem.teams}
+    team_busy_day: dict[tuple[str, object], list[tuple[datetime, datetime, str]]] = {}
+    field_busy_day: dict[tuple[str, object], list[tuple[datetime, datetime, str]]] = {}
+    team_names = {t.id: t.name for t in problem.teams}
+    known_teams = set(team_names)
     known_fields = set(field_by_id)
     first_day = min(local_days) - timedelta(days=1)
     last_day = max(local_days) + timedelta(days=1)
@@ -119,7 +120,7 @@ def run_checks(problem: Problem, rules: Rules, events: list[ProposedEvent]) -> l
         day = max(b.start.astimezone(tz).date(), first_day)
         last = min(b.end.astimezone(tz).date(), last_day)
         while day <= last:
-            target.setdefault((rid, day), []).append((b.start, b.end))
+            target.setdefault((rid, day), []).append((b.start, b.end, b.reason))
             day += timedelta(days=1)
 
     field_partner = _overlap_partners(events, "field_id")
@@ -132,7 +133,7 @@ def run_checks(problem: Problem, rules: Rules, events: list[ProposedEvent]) -> l
         results.append(_check_team_overlap(team_partner, i, ev))
         results.append(_check_field_hours(field_by_id, tz, i, ev))
         results.append(_check_blackout(blackout, local_days[i], i))
-        results.append(_check_busy(team_busy_day, field_busy_day, local_days[i], i, ev))
+        results.append(_check_busy(team_busy_day, field_busy_day, team_names, field_by_id, local_days[i], i, ev))
         results.append(_check_minimum_gap(gap_partner, rules.min_gap_days, i, ev))
     return results
 
@@ -191,20 +192,25 @@ def _check_blackout(blackout: set, day, i: int) -> CheckResult:  # type: ignore[
 def _check_busy(
     team_busy_day: dict,
     field_busy_day: dict,
+    team_names: dict,
+    field_by_id: dict,
     local_day,
     i: int,
     ev: ProposedEvent,
 ) -> CheckResult:  # type: ignore[no-untyped-def]
+    # Names and the busy reason (league game, ground closed, ...) say why, never who.
     check = "busy"
     prev_day = local_day - timedelta(days=1)
     for bucket_day in (prev_day, local_day):
-        for b_start, b_end in team_busy_day.get((ev.team_id, bucket_day), ()):
+        for b_start, b_end, why in team_busy_day.get((ev.team_id, bucket_day), ()):
             if _overlaps(ev.starts_at, ev.ends_at, b_start, b_end):
-                return _fail(check, i, f"Team '{ev.team_id}' is busy at this time.")
+                name = team_names.get(ev.team_id, ev.team_id)
+                return _fail(check, i, f"{name} is not free at this time ({why}).")
     for bucket_day in (prev_day, local_day):
-        for b_start, b_end in field_busy_day.get((ev.field_id, bucket_day), ()):
+        for b_start, b_end, why in field_busy_day.get((ev.field_id, bucket_day), ()):
             if _overlaps(ev.starts_at, ev.ends_at, b_start, b_end):
-                return _fail(check, i, f"Field '{ev.field_id}' is busy at this time.")
+                name = field_by_id[ev.field_id].name
+                return _fail(check, i, f"{name} is not available at this time ({why}).")
     return _pass(check, i)
 
 
